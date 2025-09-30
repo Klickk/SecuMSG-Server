@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"auth/internal/domain"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -22,6 +23,10 @@ func (u *UserStore) Create(ctx context.Context, usr *domain.User) error {
 func (u *UserStore) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
 	var user domain.User
 	if err := u.db.WithContext(ctx).First(&user, "id = ?", id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrRecordNotFound
+		}
+		
 		return nil, err
 	}
 	return &user, nil
@@ -30,6 +35,9 @@ func (u *UserStore) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, er
 func (u *UserStore) GetByEmail(ctx context.Context, email string) (*domain.User, error) {
 	var user domain.User
 	if err := u.db.WithContext(ctx).First(&user, "email = ?", email).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrRecordNotFound
+		}
 		return nil, err
 	}
 	return &user, nil
@@ -38,6 +46,9 @@ func (u *UserStore) GetByEmail(ctx context.Context, email string) (*domain.User,
 func (u *UserStore) GetByUsername(ctx context.Context, username string) (*domain.User, error) {
 	var user domain.User
 	if err := u.db.WithContext(ctx).First(&user, "username = ?", username).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, ErrRecordNotFound
+		}
 		return nil, err
 	}
 	return &user, nil
