@@ -16,6 +16,13 @@ type PasswordCredential struct {
 
 func (PasswordCredential) TableName() string { return "password_credentials" }
 
+func (p *PasswordCredential) GetAlgo() string      { return p.Algo }
+func (p *PasswordCredential) GetHash() []byte      { return p.Hash }
+func (p *PasswordCredential) GetSalt() []byte      { return p.Salt }
+func (p *PasswordCredential) GetParamsJSON() []byte { return p.ParamsJSON }
+func (p *PasswordCredential) GetPasswordVer() int  { return p.PasswordVer }
+
+
 type WebAuthnCredential struct {
 	ID           CredentialID`gorm:"type:uuid;primaryKey" db:"id"`
 	UserID       UserID `gorm:"type:uuid;index" db:"user_id"`
