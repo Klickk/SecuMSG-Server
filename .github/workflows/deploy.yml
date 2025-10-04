@@ -29,12 +29,18 @@ jobs:
       - name: Login GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
+      - name: Compute lowercase owner/repo
+        run: |
+          echo "OWNER_LC=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "REPO_LC=$(echo '${{ github.event.repository.name }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Write .env.prod
         run: |
           mkdir -p .docker
           cat > .docker/.env.prod <<EOF
-          OWNER=${{ github.repository_owner }}
-          REPO=${{ github.event.repository.name }}
+          REGISTRY=ghcr.io
+          OWNER=${{ env.OWNER_LC }}
+          REPO=${{ env.REPO_LC }}
           TAG=latest
           POSTGRES_PASSWORD=${{ secrets.PROD_POSTGRES_PASSWORD }}
           SIGNING_KEY=${{ secrets.PROD_SIGNING_KEY }}
