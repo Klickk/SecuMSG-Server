@@ -99,8 +99,7 @@ func (a *AuthServiceImpl) Register(ctx context.Context, r dto.RegisterRequest, i
 
 //TO DO
 func (s *AuthServiceImpl) VerifyEmail(ctx context.Context, token string) error {
-	
-	return nil
+		return nil
 }
 
 func (a *AuthServiceImpl) Login(ctx context.Context, r dto.LoginRequest, ip, ua string) (*dto.TokenResponse, error) {

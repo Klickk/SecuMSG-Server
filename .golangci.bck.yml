@@ -1,0 +1,46 @@
+# .golangci.yml
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - gosimple
+    - ineffassign
+    - errcheck
+    - typecheck
+    - unused
+    - revive          # modern replacement for golint
+    - gofumpt         # formatting stricter than gofmt
+    - misspell
+    - unparam
+    - gocyclo
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        severity: warning
+        disabled: true
+      - name: var-naming
+      - name: blank-imports
+      - name: indent-error-flow
+      - name: empty-lines
+      - name: errorf
+  gofumpt:
+    extra-rules: true
+  gocyclo:
+    min-complexity: 18
+
+issues:
+  exclude-use-default: false
+  exclude-rules:
+    - path: _test\.go
+      linters: [gocyclo]
+
+# Keep monorepo noise down
+output:
+  sort-results: true

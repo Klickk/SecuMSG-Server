@@ -1,0 +1,72 @@
+name: Build & Publish Images
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+permissions:
+  contents: read
+  packages: write   # needed for GHCR
+  id-token: write   # (optional) provenance
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: ${{ github.repository_owner }}
+  SHA_TAG: sha-${{ github.sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # GATEWAY
+      - name: Build & push gateway
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/gateway
+          file: ./services/gateway/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ github.event.repository.name }}/gateway:${{ env.SHA_TAG }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ github.event.repository.name }}/gateway:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # AUTH
+      - name: Build & push auth
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/auth
+          file: ./services/auth/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ github.event.repository.name }}/auth:${{ env.SHA_TAG }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ github.event.repository.name }}/auth:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # AUTH-MIGRATIONS
+      - name: Build & push auth-migrations
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/auth/migrations
+          file: ./services/auth/migrations/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ github.event.repository.name }}/auth-migrations:${{ env.SHA_TAG }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/${{ github.event.repository.name }}/auth-migrations:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

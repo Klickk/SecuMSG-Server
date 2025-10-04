@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: appdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [appnet]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appdb || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  migrate-auth:
+    image: ghcr.io/${OWNER}/${REPO}/auth-migrations:${TAG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [appnet]
+    command: ["-verbose","-source","file:///migrations","-database","postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable","up"]
+    restart: "no"
+
+  auth:
+    image: ghcr.io/${OWNER}/${REPO}/auth:${TAG}
+    depends_on:
+      - postgres
+      - migrate-auth
+    networks: [appnet]
+    environment:
+      DATABASE_URL: postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable
+      ISSUER: http://auth:8081
+      PUBLIC_JWKS_PATH: /v1/oauth/jwks
+      TRUST_PROXY: "true"
+      ADDR: ":8081"
+      SIGNING_KEY: ${SIGNING_KEY}
+      ACCESS_TTL: "15m"
+      REFRESH_TTL: "720h"
+      AUDIENCE: "client"
+      SIGNING_KEY_ID: "kid-1"
+    ports: ["8081:8081"]
+
+  gateway:
+    image: ghcr.io/${OWNER}/${REPO}/gateway:${TAG}
+    depends_on: [auth]
+    networks: [appnet]
+    environment:
+      AUTH_BASE_URL: http://auth:8081
+      ISSUER: http://auth:8081
+      GATEWAY_SHARED_HS256_SECRET: ${SIGNING_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    ports: ["8080:8080"]
+
+networks:
+  appnet: {}
+
+volumes:
+  pgdata: {}

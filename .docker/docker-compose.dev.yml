@@ -1,0 +1,76 @@
+# ./docker/docker-compose.yml
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: appdb
+    ports: ["5432:5432"]
+    networks: [appnet]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appdb || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  migrate-auth:
+    image: migrate/migrate:4
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [appnet]
+    volumes:
+      - ../services/auth/migrations:/migrations:ro
+    command:
+      [
+        "-verbose",
+        "-source",
+        "file:///migrations",
+        "-database",
+        "postgres://app:secret@postgres:5432/appdb?sslmode=disable",
+        "up",
+      ]
+    restart: "no"
+
+  auth:
+    build: ../services/auth
+    environment:
+      DATABASE_URL: postgres://app:secret@postgres:5432/appdb?sslmode=disable
+      ISSUER: http://auth:8081
+      PUBLIC_JWKS_PATH: /v1/oauth/jwks
+      TRUST_PROXY: "true"
+      ADDR: ":8081"
+      SIGNING_KEY: "dev-super-secret-change-me" # HS256 secret for TokenServiceHS256
+      ACCESS_TTL: "15m"
+      REFRESH_TTL: "720h"
+      AUDIENCE: "client"
+      SIGNING_KEY_ID: "kid-1"
+    ports: ["8081:8081"]
+    depends_on:
+      - postgres
+      - migrate-auth
+    networks: [appnet]
+
+  gateway:
+    build: ../services/gateway
+    environment:
+      AUTH_BASE_URL: http://auth:8081
+      ISSUER: http://auth:8081
+      JWKS_URL: http://auth:8081/v1/oauth/jwks
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      GATEWAY_SHARED_HS256_SECRET: "dev-super-secret-change-me" # must match auth SIGNING_KEY
+      GATEWAY_DEBUG: "true"
+    ports: ["8080:8080"]
+    depends_on: [auth]
+    networks: [appnet]
+
+networks:
+  appnet: {}
+
+volumes:
+  pgdata: {}

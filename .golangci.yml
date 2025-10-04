@@ -1,0 +1,45 @@
+version: "2"
+run:
+  issues-exit-code: 1
+  tests: true
+linters:
+  enable:
+    - gocyclo
+    - misspell
+    - revive
+    - unparam
+  settings:
+    gocyclo:
+      min-complexity: 18
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+          disabled: true
+        - name: var-naming
+        - name: blank-imports
+        - name: indent-error-flow
+        - name: empty-lines
+        - name: errorf
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - gocyclo
+        path: _test\.go
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gofumpt
+  settings:
+    gofumpt:
+      extra-rules: true
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

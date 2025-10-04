@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go (gateway)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/gateway/go.mod
+
+      - name: Tidy + build + test (gateway)
+        working-directory: services/gateway
+        run: |
+          go mod tidy
+          go vet ./...
+          go test ./... -v
+          go build ./...
+
+      - name: Set up Go (auth)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/auth/go.mod
+
+      - name: Tidy + build + test (auth)
+        working-directory: services/auth
+        run: |
+          go mod tidy
+          go vet ./...
+          go test ./... -v
+          go build ./...

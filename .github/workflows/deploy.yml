@@ -1,0 +1,32 @@
+name: Deploy (self-hosted)
+
+on:
+  workflow_run:
+    workflows: ["Build & Publish Images"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: [self-hosted, prod]
+
+    env:
+      OWNER: ${{ github.repository_owner }}
+      REPO: ${{ github.event.repository.name }}
+      TAG: sha-${{ github.sha }} # deploy immutable by default; switch to 'latest' if you prefer
+
+    steps:
+      - name: Login GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Compose pull & up
+        working-directory: ~/sem7
+        run: |
+          export OWNER="$OWNER" REPO="$REPO" TAG="$TAG"
+          docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod pull
+          docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod up -d

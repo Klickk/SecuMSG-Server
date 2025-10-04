@@ -1,0 +1,59 @@
+name: Lint (golangci-lint)
+
+on:
+  pull_request:
+    paths:
+      - "services/gateway/**"
+      - "services/auth/**"
+      - ".golangci.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "services/gateway/**"
+      - "services/auth/**"
+      - ".golangci.yml"
+
+jobs:
+  lint-gateway:
+    name: Lint gateway
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go matching module (gateway)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/gateway/go.mod
+
+      - name: Download deps
+        working-directory: services/gateway
+        run: go mod download
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: services/gateway
+          args: --timeout=5m
+
+  lint-auth:
+    name: Lint auth
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go matching module (auth)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/auth/go.mod
+
+      - name: Download deps
+        working-directory: services/auth
+        run: go mod download
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: services/auth
+          args: --timeout=5m
