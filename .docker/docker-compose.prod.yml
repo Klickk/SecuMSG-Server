@@ -1,3 +1,4 @@
+# .docker/docker-compose.prod.yml
 services:
   postgres:
     image: postgres:16-alpine
@@ -16,24 +17,30 @@ services:
       start_period: 5s
 
   migrate-auth:
-    image: ghcr.io/${OWNER}/${REPO}/auth-migrations:${TAG}
+    image: ${REGISTRY}/${OWNER}/${REPO}/auth-migrations:${TAG}
     depends_on:
       postgres:
         condition: service_healthy
     networks: [appnet]
-    command: ["-verbose","-source","file:///migrations","-database","postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable","up"]
+    command: [
+      "-verbose",
+      "-source","file:///migrations",
+      "-database","postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable",
+      "up"
+    ]
     restart: "no"
 
   auth:
-    image: ghcr.io/${OWNER}/${REPO}/auth:${TAG}
+    image: ${REGISTRY}/${OWNER}/${REPO}/auth:${TAG}
     depends_on:
       - postgres
       - migrate-auth
     networks: [appnet]
     environment:
-      DATABASE_URL: postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable
-      ISSUER: http://auth:8081
-      PUBLIC_JWKS_PATH: /v1/oauth/jwks
+      # If SIGNING_KEY / POSTGRES_PASSWORD may contain special chars, prefer precomputing DATABASE_URL in the env file.
+      DATABASE_URL: "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable"
+      ISSUER: "http://auth:8081"
+      PUBLIC_JWKS_PATH: "/v1/oauth/jwks"
       TRUST_PROXY: "true"
       ADDR: ":8081"
       SIGNING_KEY: ${SIGNING_KEY}
@@ -42,17 +49,20 @@ services:
       AUDIENCE: "client"
       SIGNING_KEY_ID: "kid-1"
     ports: ["8081:8081"]
+    restart: unless-stopped
 
   gateway:
-    image: ghcr.io/${OWNER}/${REPO}/gateway:${TAG}
+    image: ${REGISTRY}/${OWNER}/${REPO}/gateway:${TAG}
     depends_on: [auth]
     networks: [appnet]
     environment:
-      AUTH_BASE_URL: http://auth:8081
-      ISSUER: http://auth:8081
+      AUTH_BASE_URL: "http://auth:8081"
+      ISSUER: "http://auth:8081"
+      # HS256 shared secret must match auth SIGNING_KEY
       GATEWAY_SHARED_HS256_SECRET: ${SIGNING_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS}
     ports: ["8080:8080"]
+    restart: unless-stopped
 
 networks:
   appnet: {}
