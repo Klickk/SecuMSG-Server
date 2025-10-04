@@ -26,9 +26,6 @@ jobs:
             docker compose version
           fi
 
-      - name: Login GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
       - name: Compute lowercase owner/repo
         run: |
           echo "OWNER_LC=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
@@ -37,20 +34,34 @@ jobs:
       - name: Write .env.prod
         run: |
           mkdir -p .docker
-          cat > .docker/.env.prod <<EOF
-          REGISTRY=ghcr.io
-          OWNER=${{ env.OWNER_LC }}
-          REPO=${{ env.REPO_LC }}
-          TAG=latest
-          POSTGRES_PASSWORD=${{ secrets.PROD_POSTGRES_PASSWORD }}
-          SIGNING_KEY=${{ secrets.PROD_SIGNING_KEY }}
-          CORS_ORIGINS=${{ vars.CORS_ORIGINS }}
-          EOF
+          {
+            echo "REGISTRY=ghcr.io"
+            echo "OWNER=${{ env.OWNER_LC }}"
+            echo "REPO=${{ env.REPO_LC }}"
+            echo "TAG=latest"
+            # Quote secrets so '#' and spaces can't break parsing
+            echo "POSTGRES_PASSWORD=\"${{ secrets.PROD_POSTGRES_PASSWORD }}\""
+            echo "SIGNING_KEY=\"${{ secrets.PROD_SIGNING_KEY }}\""
+            echo "CORS_ORIGINS=\"${{ vars.CORS_ORIGINS }}\""
+          } > .docker/.env.prod
+
+      - name: Show env file (sanitized)
+        run: sed -E 's/=(.*)/=*** /' .docker/.env.prod
+
+      - name: Login GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Pull & start stack
         run: |
           docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod pull
           docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod up -d
 
+      # If anything fails above, dump logs
+      - name: Dump compose state on failure
+        if: failure()
+        run: |
+          docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod ps
+          docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod logs --no-color --tail=200 || true
+      
       - name: Show running containers
         run: docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
