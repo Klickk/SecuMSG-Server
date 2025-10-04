@@ -1,59 +1,31 @@
-name: Lint (golangci-lint)
+# .github/workflows/lint.yml
+name: Lint
 
 on:
   pull_request:
-    paths:
-      - "services/gateway/**"
-      - "services/auth/**"
-      - ".golangci.yml"
   push:
     branches: [ main ]
-    paths:
-      - "services/gateway/**"
-      - "services/auth/**"
-      - ".golangci.yml"
 
 jobs:
-  lint-gateway:
-    name: Lint gateway
+  golangci:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - services/auth
+          - services/gateway
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Go matching module (gateway)
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: services/gateway/go.mod
+      - name: Show module
+        run: ls -la ${{ matrix.module }}
 
-      - name: Download deps
-        working-directory: services/gateway
-        run: go mod download
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          working-directory: services/gateway
-          args: --timeout=5m
-
-  lint-auth:
-    name: Lint auth
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go matching module (auth)
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: services/auth/go.mod
-
-      - name: Download deps
-        working-directory: services/auth
-        run: go mod download
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          working-directory: services/auth
-          args: --timeout=5m
+      - name: Lint ${{ matrix.module }}
+        run: |
+          docker run --rm \
+            -v "$PWD/${{ matrix.module }}":/app \
+            -w /app \
+            golangci/golangci-lint:latest \
+            golangci-lint run --timeout=5m
