@@ -1,32 +1,50 @@
 name: Deploy (self-hosted)
 
 on:
+  workflow_dispatch:
   workflow_run:
     workflows: ["Build & Publish Images"]
     types: [completed]
     branches: [main]
 
-permissions:
-  contents: read
-  packages: read
-
 jobs:
   deploy:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    runs-on: [self-hosted]
-
-    env:
-      OWNER: ${{ github.repository_owner }}
-      REPO: ${{ github.event.repository.name }}
-      TAG: sha-${{ github.sha }} # deploy immutable by default; switch to 'latest' if you prefer
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: [self-hosted, prod]
 
     steps:
+      - uses: actions/checkout@v4
+
+      # ensure docker compose exists in runner container
+      - name: Ensure docker compose plugin
+        run: |
+          if ! docker compose version >/dev/null 2>&1; then
+            mkdir -p ~/.docker/cli-plugins
+            curl -sSL https://github.com/docker/compose/releases/download/v2.29.0/docker-compose-linux-x86_64 \
+              -o ~/.docker/cli-plugins/docker-compose
+            chmod +x ~/.docker/cli-plugins/docker-compose
+            docker compose version
+          fi
+
       - name: Login GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Compose pull & up
-        working-directory: ~/sem7
+      - name: Write .env.prod
         run: |
-          export OWNER="$OWNER" REPO="$REPO" TAG="$TAG"
+          mkdir -p .docker
+          cat > .docker/.env.prod <<EOF
+          OWNER=${{ github.repository_owner }}
+          REPO=${{ github.event.repository.name }}
+          TAG=latest
+          POSTGRES_PASSWORD=${{ secrets.PROD_POSTGRES_PASSWORD }}
+          SIGNING_KEY=${{ secrets.PROD_SIGNING_KEY }}
+          CORS_ORIGINS=${{ vars.CORS_ORIGINS }}
+          EOF
+
+      - name: Pull & start stack
+        run: |
           docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod pull
           docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod up -d
+
+      - name: Show running containers
+        run: docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
