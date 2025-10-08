@@ -34,3 +34,4 @@ type WebAuthnCredential struct {
 }
 
 func (WebAuthnCredential) TableName() string { return "webauthn_credentials" }
+
