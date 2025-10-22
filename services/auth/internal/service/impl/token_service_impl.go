@@ -3,10 +3,12 @@ package impl
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"auth/internal/domain"
 	"auth/internal/dto"
+	"auth/internal/netutil"
 	"auth/internal/store"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -26,15 +28,15 @@ type TokenConfig struct {
 // ====== Claims ======
 
 type AccessClaims struct {
-	SID   string  `json:"sid"`            // session id
-	DID   *string `json:"did,omitempty"`  // device id (optional)
+	SID   string  `json:"sid"`           // session id
+	DID   *string `json:"did,omitempty"` // device id (optional)
 	Scope string  `json:"scope,omitempty"`
 	jwt.RegisteredClaims
 }
 
 type RefreshClaims struct {
-	SID string `json:"sid"` // session id
-	jwt.RegisteredClaims    // jti == refresh_id
+	SID                  string `json:"sid"` // session id
+	jwt.RegisteredClaims        // jti == refresh_id
 }
 
 // ====== Service ======
@@ -55,6 +57,8 @@ func (t *TokenServiceImpl) Issue(
 	deviceID *domain.DeviceID,
 	ip, ua string,
 ) (*dto.TokenResponse, error) {
+	ip = normalizeIP(ip)
+	ua = netutil.TruncateUserAgent(ua)
 	now := time.Now().UTC()
 
 	// 1) create session
@@ -92,6 +96,8 @@ func (t *TokenServiceImpl) Issue(
 
 // Refresh validates the refresh JWT, checks session state, rotates refresh id, and returns new tokens.
 func (t *TokenServiceImpl) Refresh(ctx context.Context, refreshToken string, ip, ua string) (*dto.TokenResponse, error) {
+	ip = normalizeIP(ip)
+	ua = netutil.TruncateUserAgent(ua)
 	now := time.Now().UTC()
 
 	// 1) parse & validate refresh JWT
@@ -212,4 +218,11 @@ func containsAudience(aud jwt.ClaimStrings, expected string) bool {
 		}
 	}
 	return false
+}
+
+func normalizeIP(ip string) string {
+	if normalized, ok := netutil.NormalizeIP(ip); ok {
+		return normalized
+	}
+	return strings.TrimSpace(ip)
 }
