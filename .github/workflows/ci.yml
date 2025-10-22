@@ -31,10 +31,12 @@ jobs:
         with:
           go-version-file: services/auth/go.mod
 
-      - name: Tidy + build + test (auth)
+      - name: Tidy + build (auth)
         working-directory: services/auth
         run: |
           go mod tidy
           go vet ./...
-          go test ./... -v
           go build ./...
+      - name: Unit tests (auth)
+        working-directory: services/auth
+        run: go test ./... -v

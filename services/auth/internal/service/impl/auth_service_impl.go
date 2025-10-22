@@ -14,19 +14,59 @@ import (
 )
 
 type AuthServiceImpl struct {
-	Store          *store.Store
+	Store           dataStore
 	PasswordService service.PasswordService
-	TService       service.TokenService
+	TService        service.TokenService
 }
 
 func NewAuthServiceImpl(store *store.Store, passwordService service.PasswordService, tokenService service.TokenService) *AuthServiceImpl {
 	return &AuthServiceImpl{
-		Store:          store,
+		Store:           gormStoreAdapter{store: store},
 		PasswordService: passwordService,
-		TService:       tokenService,
+		TService:        tokenService,
 	}
 }
 
+type dataStore interface {
+	WithTx(ctx context.Context, fn func(tx storeTx) error) error
+}
+
+type storeTx interface {
+	Users() userStore
+	Credentials() credentialStore
+}
+
+type userStore interface {
+	Create(ctx context.Context, usr *domain.User) error
+	GetByEmail(ctx context.Context, email string) (*domain.User, error)
+	GetByUsername(ctx context.Context, username string) (*domain.User, error)
+}
+
+type credentialStore interface {
+	UpsertPassword(ctx context.Context, c *domain.PasswordCredential) error
+	GetPasswordByUserID(ctx context.Context, userID uuid.UUID) (*domain.PasswordCredential, error)
+}
+
+type gormStoreAdapter struct {
+	store *store.Store
+}
+
+func (g gormStoreAdapter) WithTx(ctx context.Context, fn func(tx storeTx) error) error {
+	if g.store == nil {
+		return errors.New("nil store")
+	}
+	return g.store.WithTx(ctx, func(tx *store.Store) error {
+		return fn(gormTxAdapter{tx: tx})
+	})
+}
+
+type gormTxAdapter struct {
+	tx *store.Store
+}
+
+func (g gormTxAdapter) Users() userStore { return g.tx.Users() }
+
+func (g gormTxAdapter) Credentials() credentialStore { return g.tx.Credentials() }
 
 func (a *AuthServiceImpl) Register(ctx context.Context, r dto.RegisterRequest, ip, ua string) (*dto.RegisterResponse, error) {
 	// 1) basic validation
@@ -41,7 +81,7 @@ func (a *AuthServiceImpl) Register(ctx context.Context, r dto.RegisterRequest, i
 	var out dto.RegisterResponse
 
 	// 2) single transaction: create user + (optional) password credential
-	err := a.Store.WithTx(ctx, func(tx *store.Store) error {
+	err := a.Store.WithTx(ctx, func(tx storeTx) error {
 		now := time.Now().UTC()
 
 		// 2a) create user
@@ -96,10 +136,9 @@ func (a *AuthServiceImpl) Register(ctx context.Context, r dto.RegisterRequest, i
 	return &out, nil
 }
 
-
-//TO DO
+// TO DO
 func (s *AuthServiceImpl) VerifyEmail(ctx context.Context, token string) error {
-		return nil
+	return nil
 }
 
 func (a *AuthServiceImpl) Login(ctx context.Context, r dto.LoginRequest, ip, ua string) (*dto.TokenResponse, error) {
@@ -110,7 +149,7 @@ func (a *AuthServiceImpl) Login(ctx context.Context, r dto.LoginRequest, ip, ua 
 	// We might need a tx if we rehash the password (write). Keep it simple: always use WithTx.
 	var tokens *dto.TokenResponse
 
-	err := a.Store.WithTx(ctx, func(tx *store.Store) error {
+	err := a.Store.WithTx(ctx, func(tx storeTx) error {
 		// 1) load user by email or username
 		var user *domain.User
 		var err error
