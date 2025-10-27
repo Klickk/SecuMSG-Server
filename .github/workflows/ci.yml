@@ -40,3 +40,25 @@ jobs:
       - name: Unit tests (auth)
         working-directory: services/auth
         run: go test ./... -v
+
+      - name: Set up Go (crypto-core)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/crypto-core/go.mod
+
+      - name: Unit tests (crypto-core)
+        working-directory: services/crypto-core
+        run: go test ./... -v
+
+      - name: Set up Go (keys)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/keys/go.mod
+
+      - name: Tidy + build + test (keys)
+        working-directory: services/keys
+        run: |
+          go mod tidy
+          go vet ./...
+          go test ./... -v
+          go build ./...

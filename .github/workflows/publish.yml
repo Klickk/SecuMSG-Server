@@ -70,3 +70,27 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.REPO_LC }}/auth-migrations:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Build & push keys
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/keys
+          file: ./services/keys/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.REPO_LC }}/keys:${{ env.SHA_TAG }}
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.REPO_LC }}/keys:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push keys-migrations
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/keys/migrations
+          file: ./services/keys/migrations/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.REPO_LC }}/keys-migrations:${{ env.SHA_TAG }}
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.REPO_LC }}/keys-migrations:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

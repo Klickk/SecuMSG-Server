@@ -37,6 +37,25 @@ services:
       ]
     restart: "no"
 
+  migrate-keys:
+    image: migrate/migrate:4
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [appnet]
+    volumes:
+      - ../services/keys/migrations:/migrations:ro
+    command:
+      [
+        "-verbose",
+        "-source",
+        "file:///migrations",
+        "-database",
+        "postgres://app:secret@postgres:5432/appdb?sslmode=disable",
+        "up",
+      ]
+    restart: "no"
+
   auth:
     build: ../services/auth
     environment:
@@ -54,6 +73,7 @@ services:
     depends_on:
       - postgres
       - migrate-auth
+      - migrate-keys
     networks: [appnet]
 
   gateway:
@@ -67,6 +87,17 @@ services:
       GATEWAY_DEBUG: "true"
     ports: ["8080:8080"]
     depends_on: [auth]
+    networks: [appnet]
+
+  keys:
+    build: ../services/keys
+    environment:
+      DATABASE_URL: postgres://app:secret@postgres:5432/appdb?sslmode=disable
+      ADDR: :8082
+    ports: ["8082:8082"]
+    depends_on:
+      - postgres
+      - migrate-keys
     networks: [appnet]
 
 networks:
