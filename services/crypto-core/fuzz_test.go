@@ -38,7 +38,7 @@ func FuzzHeaderCounters(f *testing.F) {
 			t.Fatalf("seed encrypt: %v", err)
 		}
 		if _, err := Decrypt(bobSess, ct, header); err != nil {
-			// Ignore errors from the warm-up decrypt, but ensure no panic.
+			_ = err
 		}
 
 		ct2, header2, err := Encrypt(aliceSess, payload)
