@@ -131,7 +131,11 @@ func runRegister(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close response body: %v\n", cerr)
+		}
+	}()
 
 	if resp.StatusCode >= 400 {
 		data, _ := io.ReadAll(resp.Body)
@@ -181,7 +185,11 @@ func runBundle(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close response body: %v\n", cerr)
+		}
+	}()
 
 	if resp.StatusCode >= 400 {
 		data, _ := io.ReadAll(resp.Body)
