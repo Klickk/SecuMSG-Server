@@ -15,6 +15,8 @@ jobs:
         module:
           - services/auth
           - services/gateway
+          - services/crypto-core
+          - services/keys
 
     steps:
       - uses: actions/checkout@v4

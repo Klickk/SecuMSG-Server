@@ -33,7 +33,10 @@ func Encrypt(session *SessionState, plaintext []byte) ([]byte, *MessageHeader, e
 	session.SendChain.Key = newCK
 	session.SendChain.Index++
 
-	key, nonce := deriveCipherParams(mk)
+	key, nonce, err := deriveCipherParams(mk)
+	if err != nil {
+		return nil, nil, err
+	}
 	aead, err := chacha20poly1305.New(key[:])
 	if err != nil {
 		return nil, nil, err
@@ -54,7 +57,10 @@ func Decrypt(session *SessionState, ciphertext []byte, header *MessageHeader) ([
 		return nil, errors.New("cryptocore: nil header")
 	}
 	if mk, ok := session.consumeSkipped(header); ok {
-		key, nonce := deriveCipherParams(mk)
+		key, nonce, err := deriveCipherParams(mk)
+		if err != nil {
+			return nil, err
+		}
 		aead, err := chacha20poly1305.New(key[:])
 		if err != nil {
 			return nil, err
@@ -80,7 +86,10 @@ func Decrypt(session *SessionState, ciphertext []byte, header *MessageHeader) ([
 	newCK, mk := kdfChain(session.RecvChain.Key)
 	session.RecvChain.Key = newCK
 	session.RecvChain.Index++
-	key, nonce := deriveCipherParams(mk)
+	key, nonce, err := deriveCipherParams(mk)
+	if err != nil {
+		return nil, err
+	}
 	aead, err := chacha20poly1305.New(key[:])
 	if err != nil {
 		return nil, err
@@ -109,7 +118,10 @@ func RotateRatchetOnSend(session *SessionState, _ *MessageHeader) error {
 	if err != nil {
 		return err
 	}
-	root, send := kdfRoot(session.RootKey[:], dh)
+	root, send, err := kdfRoot(session.RootKey[:], dh)
+	if err != nil {
+		return err
+	}
 	session.RootKey = root
 	session.PN = session.SendChain.Index
 	session.SendChain = chainState{Key: send, Index: 0}
@@ -134,7 +146,10 @@ func RotateRatchetOnRecv(session *SessionState, header *MessageHeader) error {
 	if err != nil {
 		return err
 	}
-	root, recv := kdfRoot(session.RootKey[:], dh)
+	root, recv, err := kdfRoot(session.RootKey[:], dh)
+	if err != nil {
+		return err
+	}
 	session.RootKey = root
 	session.RemoteRatchet = header.DHPublic
 	session.RecvChain = chainState{Key: recv, Index: 0}
@@ -144,12 +159,16 @@ func RotateRatchetOnRecv(session *SessionState, header *MessageHeader) error {
 	return nil
 }
 
-func kdfRoot(root []byte, dh []byte) ([32]byte, [32]byte) {
+func kdfRoot(root, dh []byte) ([32]byte, [32]byte, error) {
 	hk := hkdf.New(sha256.New, dh, root, []byte(hkdfInfoRatchet))
 	var newRoot, chain [32]byte
-	io.ReadFull(hk, newRoot[:])
-	io.ReadFull(hk, chain[:])
-	return newRoot, chain
+	if _, err := io.ReadFull(hk, newRoot[:]); err != nil {
+		return [32]byte{}, [32]byte{}, err
+	}
+	if _, err := io.ReadFull(hk, chain[:]); err != nil {
+		return [32]byte{}, [32]byte{}, err
+	}
+	return newRoot, chain, nil
 }
 
 func kdfChain(chain [32]byte) ([32]byte, [32]byte) {
@@ -167,13 +186,17 @@ func hmacSHA256(key, data []byte) []byte {
 	return mac.Sum(nil)
 }
 
-func deriveCipherParams(mk [32]byte) ([32]byte, [12]byte) {
+func deriveCipherParams(mk [32]byte) ([32]byte, [12]byte, error) {
 	hk := hkdf.New(sha256.New, mk[:], nil, []byte("SecuMSG-AEAD"))
 	var key [32]byte
 	var nonce [12]byte
-	io.ReadFull(hk, key[:])
-	io.ReadFull(hk, nonce[:])
-	return key, nonce
+	if _, err := io.ReadFull(hk, key[:]); err != nil {
+		return [32]byte{}, [12]byte{}, err
+	}
+	if _, err := io.ReadFull(hk, nonce[:]); err != nil {
+		return [32]byte{}, [12]byte{}, err
+	}
+	return key, nonce, nil
 }
 
 func (h *MessageHeader) associatedData() []byte {

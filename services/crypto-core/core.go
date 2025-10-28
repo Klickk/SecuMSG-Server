@@ -57,8 +57,7 @@ func GenerateIdentityKeypair() (*Device, error) {
 	priv := ed25519.NewKeyFromSeed(seed)
 	pub := priv.Public().(ed25519.PublicKey)
 
-	var dhPriv [32]byte
-	dhPriv = ed25519PrivToCurve25519(priv)
+	dhPriv := ed25519PrivToCurve25519(priv)
 	dhPubSlice, err := curve25519.X25519(dhPriv[:], curve25519.Basepoint)
 	if err != nil {
 		return nil, err

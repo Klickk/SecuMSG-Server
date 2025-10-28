@@ -30,6 +30,20 @@ services:
     ]
     restart: "no"
 
+  migrate-keys:
+    image: ${REGISTRY}/${OWNER}/${REPO}/keys-migrations:${TAG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [appnet]
+    command: [
+      "-verbose",
+      "-source","file:///migrations",
+      "-database","postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable",
+      "up"
+    ]
+    restart: "no"
+
   auth:
     image: ${REGISTRY}/${OWNER}/${REPO}/auth:${TAG}
     depends_on:
@@ -51,9 +65,23 @@ services:
     ports: ["8081:8081"]
     restart: unless-stopped
 
+  keys:
+    image: ${REGISTRY}/${OWNER}/${REPO}/keys:${TAG}
+    depends_on:
+      - postgres
+      - migrate-keys
+    networks: [appnet]
+    environment:
+      DATABASE_URL: "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable"
+      ADDR: ":8082"
+    ports: ["8082:8082"]
+    restart: unless-stopped
+
   gateway:
     image: ${REGISTRY}/${OWNER}/${REPO}/gateway:${TAG}
-    depends_on: [auth]
+    depends_on:
+      - auth
+      - keys
     networks: [appnet]
     environment:
       AUTH_BASE_URL: "http://auth:8081"

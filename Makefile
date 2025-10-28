@@ -4,7 +4,7 @@ up:
 	$(compose) up --build -d
 
 logs:
-	$(compose) logs -f gateway auth
+	$(compose) logs -f gateway auth keys
 
 down:
 	$(compose) down -v
@@ -12,6 +12,8 @@ down:
 # Manually re-run migrations (optional helper)
 migrate-up:
 	$(compose) run --rm migrate-auth \
+		-path=/migrations -database 'postgres://app:secret@postgres:5432/appdb?sslmode=disable' up
+	$(compose) run --rm migrate-keys \
 		-path=/migrations -database 'postgres://app:secret@postgres:5432/appdb?sslmode=disable' up
 
 migrate-down:
