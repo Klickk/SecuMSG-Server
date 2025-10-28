@@ -3,10 +3,9 @@ package http
 import (
 	"encoding/json"
 	"errors"
-	"net/http"
-
 	"keys/internal/dto"
 	"keys/internal/service"
+	"net/http"
 
 	"github.com/google/uuid"
 )

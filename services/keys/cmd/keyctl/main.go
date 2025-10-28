@@ -8,12 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"keys/internal/dto"
 	"net/http"
 	"os"
 	"strings"
 	"time"
-
-	"keys/internal/dto"
 
 	"github.com/google/uuid"
 )
@@ -50,69 +49,24 @@ func usage() {
 	os.Exit(2)
 }
 
+type registerOpts struct {
+	baseURL   string
+	userID    string
+	deviceID  string
+	identity  string
+	signed    string
+	signature string
+	count     int
+}
+
 func runRegister(args []string) error {
-	fs := flag.NewFlagSet("register", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-
-	baseURL := fs.String("base-url", getenv("KEYCTL_BASE_URL", "http://localhost:8082"), "key service base URL")
-	userID := fs.String("user", "", "user UUID (optional; generated if empty)")
-	deviceID := fs.String("device", "", "device UUID (optional; generated if empty)")
-	identity := fs.String("identity", "", "identity key (base64; generated if empty)")
-	signed := fs.String("signed", "", "signed pre-key (base64; generated if empty)")
-	signature := fs.String("signature", "", "signed pre-key signature (base64; generated if empty)")
-	count := fs.Int("count", 5, "number of one-time pre-keys to generate")
-
-	if err := fs.Parse(args); err != nil {
+	opts, err := parseRegisterFlags(args)
+	if err != nil {
 		return err
 	}
-
-	if *count < 0 {
-		return fmt.Errorf("count must be non-negative")
-	}
-
-	payload := dto.RegisterDeviceRequest{
-		UserID:      strings.TrimSpace(*userID),
-		DeviceID:    strings.TrimSpace(*deviceID),
-		IdentityKey: *identity,
-		SignedPreKey: dto.SignedPreKey{
-			PublicKey: *signed,
-			Signature: *signature,
-			CreatedAt: time.Now().UTC(),
-		},
-	}
-
-	if payload.IdentityKey == "" {
-		key, err := randomKey(32)
-		if err != nil {
-			return err
-		}
-		payload.IdentityKey = key
-	}
-	if payload.SignedPreKey.PublicKey == "" {
-		key, err := randomKey(32)
-		if err != nil {
-			return err
-		}
-		payload.SignedPreKey.PublicKey = key
-	}
-	if payload.SignedPreKey.Signature == "" {
-		sig, err := randomKey(64)
-		if err != nil {
-			return err
-		}
-		payload.SignedPreKey.Signature = sig
-	}
-
-	payload.OneTimePreKeys = make([]dto.OneTimePreKey, *count)
-	for i := 0; i < *count; i++ {
-		key, err := randomKey(32)
-		if err != nil {
-			return err
-		}
-		payload.OneTimePreKeys[i] = dto.OneTimePreKey{
-			ID:        uuid.New().String(),
-			PublicKey: key,
-		}
+	payload, err := buildRegisterPayload(opts)
+	if err != nil {
+		return err
 	}
 
 	body, err := json.Marshal(payload)
@@ -120,14 +74,8 @@ func runRegister(args []string) error {
 		return err
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(*baseURL, "/")+"/keys/device/register", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
+	endpoint := strings.TrimRight(opts.baseURL, "/") + "/keys/device/register"
+	resp, err := postJSON(endpoint, body)
 	if err != nil {
 		return err
 	}
@@ -150,6 +98,7 @@ func runRegister(args []string) error {
 		return err
 	}
 
+	// Fill back generated IDs so the printed request matches the effective state.
 	if payload.UserID == "" {
 		payload.UserID = registerResp.UserID
 	}
@@ -157,12 +106,87 @@ func runRegister(args []string) error {
 		payload.DeviceID = registerResp.DeviceID
 	}
 
-	output := struct {
+	out := struct {
 		Request  dto.RegisterDeviceRequest  `json:"request"`
 		Response dto.RegisterDeviceResponse `json:"response"`
 	}{payload, registerResp}
 
-	return printJSON(output)
+	return printJSON(out)
+}
+
+func parseRegisterFlags(args []string) (registerOpts, error) {
+	fs := flag.NewFlagSet("register", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	var o registerOpts
+	fs.StringVar(&o.baseURL, "base-url", getenv("KEYCTL_BASE_URL", "http://localhost:8082"), "key service base URL")
+	fs.StringVar(&o.userID, "user", "", "user UUID (optional; generated if empty)")
+	fs.StringVar(&o.deviceID, "device", "", "device UUID (optional; generated if empty)")
+	fs.StringVar(&o.identity, "identity", "", "identity key (base64; generated if empty)")
+	fs.StringVar(&o.signed, "signed", "", "signed pre-key (base64; generated if empty)")
+	fs.StringVar(&o.signature, "signature", "", "signed pre-key signature (base64; generated if empty)")
+	fs.IntVar(&o.count, "count", 5, "number of one-time pre-keys to generate")
+
+	if err := fs.Parse(args); err != nil {
+		return registerOpts{}, err
+	}
+	if o.count < 0 {
+		return registerOpts{}, fmt.Errorf("count must be non-negative")
+	}
+	return o, nil
+}
+
+func buildRegisterPayload(o registerOpts) (dto.RegisterDeviceRequest, error) {
+	p := dto.RegisterDeviceRequest{
+		UserID:      strings.TrimSpace(o.userID),
+		DeviceID:    strings.TrimSpace(o.deviceID),
+		IdentityKey: strings.TrimSpace(o.identity),
+		SignedPreKey: dto.SignedPreKey{
+			PublicKey: strings.TrimSpace(o.signed),
+			Signature: strings.TrimSpace(o.signature),
+			CreatedAt: time.Now().UTC(),
+		},
+	}
+
+	var err error
+	if p.IdentityKey == "" {
+		if p.IdentityKey, err = randomKey(32); err != nil {
+			return dto.RegisterDeviceRequest{}, err
+		}
+	}
+	if p.SignedPreKey.PublicKey == "" {
+		if p.SignedPreKey.PublicKey, err = randomKey(32); err != nil {
+			return dto.RegisterDeviceRequest{}, err
+		}
+	}
+	if p.SignedPreKey.Signature == "" {
+		if p.SignedPreKey.Signature, err = randomKey(64); err != nil {
+			return dto.RegisterDeviceRequest{}, err
+		}
+	}
+
+	p.OneTimePreKeys = make([]dto.OneTimePreKey, o.count)
+	for i := range p.OneTimePreKeys {
+		key, kerr := randomKey(32)
+		if kerr != nil {
+			return dto.RegisterDeviceRequest{}, kerr
+		}
+		p.OneTimePreKeys[i] = dto.OneTimePreKey{
+			ID:        uuid.New().String(),
+			PublicKey: key,
+		}
+	}
+	return p, nil
+}
+
+func postJSON(url string, body []byte) (*http.Response, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return client.Do(req)
 }
 
 func runBundle(args []string) error {

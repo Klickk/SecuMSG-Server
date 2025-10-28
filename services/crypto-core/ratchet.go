@@ -159,7 +159,7 @@ func RotateRatchetOnRecv(session *SessionState, header *MessageHeader) error {
 	return nil
 }
 
-func kdfRoot(root []byte, dh []byte) ([32]byte, [32]byte, error) {
+func kdfRoot(root, dh []byte) ([32]byte, [32]byte, error) {
 	hk := hkdf.New(sha256.New, dh, root, []byte(hkdfInfoRatchet))
 	var newRoot, chain [32]byte
 	if _, err := io.ReadFull(hk, newRoot[:]); err != nil {

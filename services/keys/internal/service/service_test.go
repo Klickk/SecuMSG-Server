@@ -2,13 +2,12 @@ package service_test
 
 import (
 	"context"
-	"testing"
-	"time"
-
 	"keys/internal/domain"
 	"keys/internal/dto"
 	"keys/internal/service"
 	"keys/internal/store"
+	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"

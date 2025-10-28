@@ -172,7 +172,13 @@ func deriveSharedSecretResponder(d *Device, msg *HandshakeMessage, otk *keyPair)
 func deriveInitialKeys(secret []byte) ([32]byte, [32]byte) {
 	kdf := hkdf.New(sha256.New, secret, nil, []byte(hkdfInfoX3DH))
 	var root, chain [32]byte
-	io.ReadFull(kdf, root[:])
-	io.ReadFull(kdf, chain[:])
+	if _, err := io.ReadFull(kdf, root[:]); err != nil {
+		// return zero-value keys on failure
+		return [32]byte{}, [32]byte{}
+	}
+	if _, err := io.ReadFull(kdf, chain[:]); err != nil {
+		// return zero-value keys on failure
+		return [32]byte{}, [32]byte{}
+	}
 	return root, chain
 }

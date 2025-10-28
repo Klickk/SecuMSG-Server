@@ -1,14 +1,13 @@
 package main
 
 import (
-	"log"
-	"net/http"
-	"time"
-
 	"keys/internal/config"
 	"keys/internal/service"
 	"keys/internal/store"
 	httptransport "keys/internal/transport/http"
+	"log"
+	"net/http"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
