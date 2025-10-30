@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS identity_keys (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS signed_prekeys (
+CREATE TABLE IF NOT EXISTS signed_pre_keys (
   device_id uuid PRIMARY KEY REFERENCES devices(id) ON DELETE CASCADE,
   public_key text NOT NULL,
   signature text NOT NULL,

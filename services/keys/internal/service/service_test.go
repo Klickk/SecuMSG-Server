@@ -22,7 +22,7 @@ func setupService(t *testing.T) (*service.Service, *gorm.DB) {
 		t.Fatalf("open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&domain.User{}, &domain.Device{}, &domain.IdentityKey{}, &domain.SignedPreKey{}, &domain.OneTimePreKey{}); err != nil {
+	if err := db.AutoMigrate(&domain.User{}, &domain.Device{}, &domain.IdentityKey{}, &domain.SignedPreKey{}, &domain.OneTimePrekey{}); err != nil {
 		t.Fatalf("automigrate: %v", err)
 	}
 
@@ -100,7 +100,7 @@ func TestRegisterAndFetchBundles(t *testing.T) {
 	}
 
 	var count int64
-	if err := db.Model(&domain.OneTimePreKey{}).Where("device_id = ?", id).Count(&count).Error; err != nil {
+	if err := db.Model(&domain.OneTimePrekey{}).Where("device_id = ?", id).Count(&count).Error; err != nil {
 		t.Fatalf("count prekeys: %v", err)
 	}
 	if count != 2 {

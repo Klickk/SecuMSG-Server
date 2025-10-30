@@ -31,7 +31,7 @@ type SignedPreKey struct {
 	CreatedAt time.Time `gorm:"not null"`
 }
 
-type OneTimePreKey struct {
+type OneTimePrekey struct {
 	ID         uuid.UUID  `gorm:"type:uuid;primaryKey"`
 	DeviceID   uuid.UUID  `gorm:"type:uuid;not null;index"`
 	PublicKey  string     `gorm:"type:text;not null"`

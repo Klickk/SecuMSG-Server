@@ -39,7 +39,7 @@ func (s *Service) RegisterDevice(ctx context.Context, req dto.RegisterDeviceRequ
 		createdAt = time.Now().UTC()
 	}
 
-	otks := make([]domain.OneTimePreKey, 0, len(req.OneTimePreKeys))
+	otks := make([]domain.OneTimePrekey, 0, len(req.OneTimePreKeys))
 	for _, k := range req.OneTimePreKeys {
 		if k.PublicKey == "" {
 			return dto.RegisterDeviceResponse{}, fmt.Errorf("%w: one-time prekey missing publicKey", ErrInvalidRequest)
@@ -48,7 +48,7 @@ func (s *Service) RegisterDevice(ctx context.Context, req dto.RegisterDeviceRequ
 		if err != nil {
 			return dto.RegisterDeviceResponse{}, fmt.Errorf("%w: invalid one-time prekey id", ErrInvalidRequest)
 		}
-		otks = append(otks, domain.OneTimePreKey{
+		otks = append(otks, domain.OneTimePrekey{
 			ID:        id,
 			DeviceID:  deviceID,
 			PublicKey: k.PublicKey,
@@ -85,7 +85,7 @@ func (s *Service) GetPreKeyBundle(ctx context.Context, deviceID uuid.UUID) (dto.
 	var (
 		identity *domain.IdentityKey
 		signed   *domain.SignedPreKey
-		otk      *domain.OneTimePreKey
+		otk      *domain.OneTimePrekey
 	)
 
 	err := s.store.WithTx(ctx, func(tx *store.Store) error {
@@ -146,7 +146,7 @@ func (s *Service) RotateSignedPreKey(ctx context.Context, req dto.RotateSignedPr
 		createdAt = time.Now().UTC()
 	}
 
-	otks := make([]domain.OneTimePreKey, 0, len(req.OneTimePreKeys))
+	otks := make([]domain.OneTimePrekey, 0, len(req.OneTimePreKeys))
 	for _, k := range req.OneTimePreKeys {
 		if k.PublicKey == "" {
 			return dto.RotateSignedPreKeyResponse{}, fmt.Errorf("%w: one-time prekey missing publicKey", ErrInvalidRequest)
@@ -155,7 +155,7 @@ func (s *Service) RotateSignedPreKey(ctx context.Context, req dto.RotateSignedPr
 		if err != nil {
 			return dto.RotateSignedPreKeyResponse{}, fmt.Errorf("%w: invalid one-time prekey id", ErrInvalidRequest)
 		}
-		otks = append(otks, domain.OneTimePreKey{ID: id, DeviceID: deviceID, PublicKey: k.PublicKey})
+		otks = append(otks, domain.OneTimePrekey{ID: id, DeviceID: deviceID, PublicKey: k.PublicKey})
 	}
 
 	err = s.store.WithTx(ctx, func(tx *store.Store) error {

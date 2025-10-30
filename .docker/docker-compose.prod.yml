@@ -8,6 +8,7 @@ services:
       POSTGRES_DB: appdb
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./infra/prod/db-init:/docker-entrypoint-initdb.d
     networks: [appnet]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U app -d appdb || exit 1"]
@@ -22,12 +23,15 @@ services:
       postgres:
         condition: service_healthy
     networks: [appnet]
-    command: [
-      "-verbose",
-      "-source","file:///migrations",
-      "-database","postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable",
-      "up"
-    ]
+    command:
+      [
+        "-verbose",
+        "-source",
+        "file:///migrations",
+        "-database",
+        "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/authdb?sslmode=disable",
+        "up",
+      ]
     restart: "no"
 
   migrate-keys:
@@ -36,12 +40,15 @@ services:
       postgres:
         condition: service_healthy
     networks: [appnet]
-    command: [
-      "-verbose",
-      "-source","file:///migrations",
-      "-database","postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable",
-      "up"
-    ]
+    command:
+      [
+        "-verbose",
+        "-source",
+        "file:///migrations",
+        "-database",
+        "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/keysdb?sslmode=disable",
+        "up",
+      ]
     restart: "no"
 
   auth:
@@ -52,7 +59,7 @@ services:
     networks: [appnet]
     environment:
       # If SIGNING_KEY / POSTGRES_PASSWORD may contain special chars, prefer precomputing DATABASE_URL in the env file.
-      DATABASE_URL: "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable"
+      DATABASE_URL: "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/authdb?sslmode=disable"
       ISSUER: "http://auth:8081"
       PUBLIC_JWKS_PATH: "/v1/oauth/jwks"
       TRUST_PROXY: "true"
@@ -72,7 +79,7 @@ services:
       - migrate-keys
     networks: [appnet]
     environment:
-      DATABASE_URL: "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/appdb?sslmode=disable"
+      DATABASE_URL: "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/keysdb?sslmode=disable"
       ADDR: ":8082"
     ports: ["8082:8082"]
     restart: unless-stopped
