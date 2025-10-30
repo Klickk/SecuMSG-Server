@@ -1,4 +1,4 @@
-package types
+package msgjson
 
 import (
 	"database/sql/driver"
@@ -16,7 +16,7 @@ func (j JSON) MarshalJSON() ([]byte, error) {
 		return []byte("null"), nil
 	}
 	if !json.Valid(j) {
-		return nil, fmt.Errorf("types.JSON: invalid JSON value")
+		return nil, fmt.Errorf("msgjson.JSON: invalid JSON value")
 	}
 	return append([]byte(nil), j...), nil
 }
@@ -24,7 +24,7 @@ func (j JSON) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON stores the provided JSON payload.
 func (j *JSON) UnmarshalJSON(data []byte) error {
 	if !json.Valid(data) {
-		return fmt.Errorf("types.JSON: invalid JSON payload")
+		return fmt.Errorf("msgjson.JSON: invalid JSON payload")
 	}
 	*j = append((*j)[:0], data...)
 	return nil
@@ -36,7 +36,7 @@ func (j JSON) Value() (driver.Value, error) {
 		return []byte("null"), nil
 	}
 	if !json.Valid(j) {
-		return nil, fmt.Errorf("types.JSON: invalid JSON value")
+		return nil, fmt.Errorf("msgjson.JSON: invalid JSON value")
 	}
 	// Return a copy to avoid exposing internal memory.
 	return append([]byte(nil), j...), nil
@@ -51,16 +51,16 @@ func (j *JSON) Scan(value interface{}) error {
 	switch v := value.(type) {
 	case []byte:
 		if !json.Valid(v) {
-			return fmt.Errorf("types.JSON: invalid JSON payload")
+			return fmt.Errorf("msgjson.JSON: invalid JSON payload")
 		}
 		*j = append((*j)[:0], v...)
 	case string:
 		if !json.Valid([]byte(v)) {
-			return fmt.Errorf("types.JSON: invalid JSON payload")
+			return fmt.Errorf("msgjson.JSON: invalid JSON payload")
 		}
 		*j = append((*j)[:0], v...)
 	default:
-		return fmt.Errorf("types.JSON: unsupported scan type %T", value)
+		return fmt.Errorf("msgjson.JSON: unsupported scan type %T", value)
 	}
 	return nil
 }

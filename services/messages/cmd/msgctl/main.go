@@ -35,6 +35,13 @@ const (
 	defaultMsgBaseURL  = "http://localhost:8080"
 )
 
+type sendOptions struct {
+	statePath string
+	convID    uuid.UUID
+	toID      uuid.UUID
+	plaintext string
+}
+
 type stateFile struct {
 	UserID          string                                      `json:"user_id"`
 	DeviceID        string                                      `json:"device_id"`
@@ -209,7 +216,9 @@ func runInit(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode >= 400 {
 		data, _ := io.ReadAll(resp.Body)
 		if len(data) == 0 {
@@ -240,6 +249,33 @@ func runInit(args []string) error {
 }
 
 func runSend(args []string) error {
+	opts, err := parseSendOptions(args)
+	if err != nil {
+		return err
+	}
+	state, err := loadState(opts.statePath)
+	if err != nil {
+		return err
+	}
+	sess, handshake, err := ensureSession(state, opts.convID, opts.toID)
+	if err != nil {
+		return err
+	}
+	req, err := buildSendRequest(state.file.DeviceID, opts, sess, handshake)
+	if err != nil {
+		return err
+	}
+	if err := postMessage(state.file.MessagesBaseURL, req); err != nil {
+		return err
+	}
+	if err := state.save(); err != nil {
+		return err
+	}
+	fmt.Println("message queued")
+	return nil
+}
+
+func parseSendOptions(args []string) (*sendOptions, error) {
 	fs := flag.NewFlagSet("send", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	statePath := fs.String("state", getenv("MSGCTL_STATE_PATH", defaultStatePath), "state file path")
@@ -247,70 +283,88 @@ func runSend(args []string) error {
 	toDevice := fs.String("to", "", "recipient device UUID")
 	message := fs.String("message", "", "message plaintext (if empty, read stdin)")
 	if err := fs.Parse(args); err != nil {
-		return err
+		return nil, err
 	}
 	if strings.TrimSpace(*convIDStr) == "" {
-		return fmt.Errorf("conversation id is required")
+		return nil, fmt.Errorf("conversation id is required")
 	}
 	if strings.TrimSpace(*toDevice) == "" {
-		return fmt.Errorf("recipient device id is required")
+		return nil, fmt.Errorf("recipient device id is required")
 	}
 	convID, err := uuid.Parse(*convIDStr)
 	if err != nil {
-		return fmt.Errorf("invalid conversation id: %w", err)
+		return nil, fmt.Errorf("invalid conversation id: %w", err)
 	}
 	toID, err := uuid.Parse(*toDevice)
 	if err != nil {
-		return fmt.Errorf("invalid recipient device id: %w", err)
+		return nil, fmt.Errorf("invalid recipient device id: %w", err)
 	}
-	plaintext := *message
-	if plaintext == "" {
-		data, err := io.ReadAll(os.Stdin)
-		if err != nil {
-			return err
-		}
-		plaintext = string(data)
+	plaintext, err := resolvePlaintext(*message)
+	if err != nil {
+		return nil, err
 	}
 	if plaintext == "" {
-		return fmt.Errorf("message must not be empty")
+		return nil, fmt.Errorf("message must not be empty")
 	}
-	state, err := loadState(*statePath)
+	return &sendOptions{
+		statePath: *statePath,
+		convID:    convID,
+		toID:      toID,
+		plaintext: plaintext,
+	}, nil
+}
+
+func resolvePlaintext(arg string) (string, error) {
+	if arg != "" {
+		return arg, nil
+	}
+	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
-		return err
+		return "", err
 	}
-	sess, ok := state.sessions[convID.String()]
-	var handshake *cryptocore.HandshakeMessage
-	if !ok {
-		bundle, err := fetchBundle(state.file.KeysBaseURL, toID)
-		if err != nil {
-			return err
-		}
-		sess, handshake, err = state.device.InitSession(bundle)
-		if err != nil {
-			return fmt.Errorf("init session: %w", err)
-		}
-		state.sessions[convID.String()] = sess
+	return string(data), nil
+}
+
+func ensureSession(state *runtimeState, convID, toID uuid.UUID) (*cryptocore.SessionState, *cryptocore.HandshakeMessage, error) {
+	if sess, ok := state.sessions[convID.String()]; ok {
+		return sess, nil, nil
 	}
-	ciphertext, header, err := cryptocore.Encrypt(sess, []byte(plaintext))
+	bundle, err := fetchBundle(state.file.KeysBaseURL, toID)
 	if err != nil {
-		return fmt.Errorf("encrypt: %w", err)
+		return nil, nil, err
+	}
+	sess, handshake, err := state.device.InitSession(bundle)
+	if err != nil {
+		return nil, nil, fmt.Errorf("init session: %w", err)
+	}
+	state.sessions[convID.String()] = sess
+	return sess, handshake, nil
+}
+
+func buildSendRequest(fromDeviceID string, opts *sendOptions, sess *cryptocore.SessionState, handshake *cryptocore.HandshakeMessage) (*sendRequest, error) {
+	ciphertext, header, err := cryptocore.Encrypt(sess, []byte(opts.plaintext))
+	if err != nil {
+		return nil, fmt.Errorf("encrypt: %w", err)
 	}
 	headerJSON, err := buildHeaderJSON(header, handshake)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	req := sendRequest{
-		ConvID:       convID.String(),
-		FromDeviceID: state.file.DeviceID,
-		ToDeviceID:   toID.String(),
+	return &sendRequest{
+		ConvID:       opts.convID.String(),
+		FromDeviceID: fromDeviceID,
+		ToDeviceID:   opts.toID.String(),
 		Ciphertext:   base64.StdEncoding.EncodeToString(ciphertext),
 		Header:       headerJSON,
-	}
+	}, nil
+}
+
+func postMessage(baseURL string, req *sendRequest) error {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return err
 	}
-	endpoint := joinURL(state.file.MessagesBaseURL, "/messages/send")
+	endpoint := joinURL(baseURL, "/messages/send")
 	httpReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -321,7 +375,9 @@ func runSend(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode >= 400 {
 		data, _ := io.ReadAll(resp.Body)
 		if len(data) == 0 {
@@ -329,10 +385,6 @@ func runSend(args []string) error {
 		}
 		return fmt.Errorf("send failed: %s", strings.TrimSpace(string(data)))
 	}
-	if err := state.save(); err != nil {
-		return err
-	}
-	fmt.Println("message queued")
 	return nil
 }
 
@@ -355,9 +407,13 @@ func runListen(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 	writer := bufio.NewWriter(os.Stdout)
-	defer writer.Flush()
+	defer func() {
+		_ = writer.Flush()
+	}()
 
 	for {
 		payload, err := conn.ReadText()
@@ -374,8 +430,12 @@ func runListen(args []string) error {
 			fmt.Fprintf(os.Stderr, "decrypt failed: %v\n", err)
 			continue
 		}
-		fmt.Fprintf(writer, "[%s] %s -> %s: %s\n", env.SentAt.Format(time.RFC3339), env.FromDeviceID, env.ToDeviceID, plaintext)
-		writer.Flush()
+		if _, err := fmt.Fprintf(writer, "[%s] %s -> %s: %s\n", env.SentAt.Format(time.RFC3339), env.FromDeviceID, env.ToDeviceID, plaintext); err != nil {
+			return err
+		}
+		if err := writer.Flush(); err != nil {
+			return err
+		}
 		if err := state.save(); err != nil {
 			return err
 		}
@@ -425,7 +485,9 @@ func fetchBundle(base string, deviceID uuid.UUID) (*cryptocore.PrekeyBundle, err
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	if resp.StatusCode >= 400 {
 		data, _ := io.ReadAll(resp.Body)
 		if len(data) == 0 {
@@ -635,126 +697,27 @@ func dialWebsocket(rawURL string) (*wsClientConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	var conn net.Conn
-	host := u.Host
-	switch strings.ToLower(u.Scheme) {
-	case "ws":
-		if !strings.Contains(host, ":") {
-			host += ":80"
-		}
-		conn, err = net.Dial("tcp", host)
-	case "wss":
-		if !strings.Contains(host, ":") {
-			host += ":443"
-		}
-		conn, err = tls.Dial("tcp", host, &tls.Config{InsecureSkipVerify: true})
-	default:
-		return nil, fmt.Errorf("unsupported websocket scheme %s", u.Scheme)
-	}
+	conn, err := openWebsocketConn(u)
 	if err != nil {
 		return nil, err
 	}
-	keyBytes := make([]byte, 16)
-	if _, err := rand.Read(keyBytes); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	key := base64.StdEncoding.EncodeToString(keyBytes)
-	path := u.RequestURI()
-	if path == "" {
-		path = "/"
-	}
-	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", path, u.Host, key)
-	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
-	if _, err := rw.WriteString(req); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	if err := rw.Flush(); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	status, err := rw.ReadString('\n')
+	rw, key, err := sendHandshake(conn, u)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
-	if !strings.Contains(status, "101") {
-		conn.Close()
-		return nil, fmt.Errorf("websocket handshake failed: %s", strings.TrimSpace(status))
-	}
-	expected := computeAccept(key)
-	var accept string
-	for {
-		line, err := rw.ReadString('\n')
-		if err != nil {
-			conn.Close()
-			return nil, err
-		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
-		}
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) == 2 && strings.EqualFold(strings.TrimSpace(parts[0]), "Sec-WebSocket-Accept") {
-			accept = strings.TrimSpace(parts[1])
-		}
-	}
-	if accept == "" || accept != expected {
-		conn.Close()
-		return nil, fmt.Errorf("websocket handshake validation failed")
+	if err := verifyServerHandshake(rw, key); err != nil {
+		_ = conn.Close()
+		return nil, err
 	}
 	return &wsClientConn{conn: conn, rw: rw}, nil
 }
 
 func (c *wsClientConn) ReadText() ([]byte, error) {
 	for {
-		first, err := c.rw.ReadByte()
+		opcode, payload, err := c.readFrame()
 		if err != nil {
 			return nil, err
-		}
-		fin := first&0x80 != 0
-		opcode := first & 0x0F
-		second, err := c.rw.ReadByte()
-		if err != nil {
-			return nil, err
-		}
-		masked := second&0x80 != 0
-		length := int(second & 0x7F)
-		switch length {
-		case 126:
-			var ext uint16
-			if err := binary.Read(c.rw, binary.BigEndian, &ext); err != nil {
-				return nil, err
-			}
-			length = int(ext)
-		case 127:
-			var ext uint64
-			if err := binary.Read(c.rw, binary.BigEndian, &ext); err != nil {
-				return nil, err
-			}
-			if ext > (1<<31 - 1) {
-				return nil, fmt.Errorf("frame too large")
-			}
-			length = int(ext)
-		}
-		var mask [4]byte
-		if masked {
-			if _, err := io.ReadFull(c.rw, mask[:]); err != nil {
-				return nil, err
-			}
-		}
-		payload := make([]byte, length)
-		if _, err := io.ReadFull(c.rw, payload); err != nil {
-			return nil, err
-		}
-		if masked {
-			for i := range payload {
-				payload[i] ^= mask[i%4]
-			}
-		}
-		if !fin {
-			return nil, fmt.Errorf("fragmented frames not supported")
 		}
 		switch opcode {
 		case wsOpText:
@@ -770,6 +733,166 @@ func (c *wsClientConn) ReadText() ([]byte, error) {
 		default:
 			// ignore other opcodes
 		}
+	}
+}
+
+func openWebsocketConn(u *url.URL) (net.Conn, error) {
+	host := u.Host
+	switch strings.ToLower(u.Scheme) {
+	case "ws":
+		if !strings.Contains(host, ":") {
+			host += ":80"
+		}
+		return net.Dial("tcp", host)
+	case "wss":
+		if !strings.Contains(host, ":") {
+			host += ":443"
+		}
+		return tls.Dial("tcp", host, &tls.Config{InsecureSkipVerify: true})
+	default:
+		return nil, fmt.Errorf("unsupported websocket scheme %s", u.Scheme)
+	}
+}
+
+func sendHandshake(conn net.Conn, u *url.URL) (*bufio.ReadWriter, string, error) {
+	keyBytes := make([]byte, 16)
+	if _, err := rand.Read(keyBytes); err != nil {
+		return nil, "", err
+	}
+	key := base64.StdEncoding.EncodeToString(keyBytes)
+	path := u.RequestURI()
+	if path == "" {
+		path = "/"
+	}
+	req := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n", path, u.Host, key)
+	rw := bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	if _, err := rw.WriteString(req); err != nil {
+		return nil, "", err
+	}
+	if err := rw.Flush(); err != nil {
+		return nil, "", err
+	}
+	return rw, key, nil
+}
+
+func verifyServerHandshake(rw *bufio.ReadWriter, key string) error {
+	status, err := rw.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(status, "101") {
+		return fmt.Errorf("websocket handshake failed: %s", strings.TrimSpace(status))
+	}
+	accept, err := readAcceptHeader(rw)
+	if err != nil {
+		return err
+	}
+	expected := computeAccept(key)
+	if accept != expected {
+		return fmt.Errorf("websocket handshake validation failed")
+	}
+	return nil
+}
+
+func readAcceptHeader(rw *bufio.ReadWriter) (string, error) {
+	var accept string
+	for {
+		line, err := rw.ReadString('\n')
+		if err != nil {
+			return "", err
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			break
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 && strings.EqualFold(strings.TrimSpace(parts[0]), "Sec-WebSocket-Accept") {
+			accept = strings.TrimSpace(parts[1])
+		}
+	}
+	if accept == "" {
+		return "", fmt.Errorf("websocket handshake validation failed")
+	}
+	return accept, nil
+}
+
+func (c *wsClientConn) readFrame() (byte, []byte, error) {
+	opcode, fin, masked, length, err := c.readFrameMeta()
+	if err != nil {
+		return 0, nil, err
+	}
+	maskKey, err := c.readMaskKey(masked)
+	if err != nil {
+		return 0, nil, err
+	}
+	payload, err := c.readPayload(length)
+	if err != nil {
+		return 0, nil, err
+	}
+	if masked {
+		applyMask(payload, maskKey)
+	}
+	if !fin {
+		return 0, nil, fmt.Errorf("fragmented frames not supported")
+	}
+	return opcode, payload, nil
+}
+
+func (c *wsClientConn) readFrameMeta() (byte, bool, bool, int, error) {
+	first, err := c.rw.ReadByte()
+	if err != nil {
+		return 0, false, false, 0, err
+	}
+	fin := first&0x80 != 0
+	opcode := first & 0x0F
+	second, err := c.rw.ReadByte()
+	if err != nil {
+		return 0, false, false, 0, err
+	}
+	masked := second&0x80 != 0
+	length := int(second & 0x7F)
+	switch length {
+	case 126:
+		var ext uint16
+		if err := binary.Read(c.rw, binary.BigEndian, &ext); err != nil {
+			return 0, false, false, 0, err
+		}
+		length = int(ext)
+	case 127:
+		var ext uint64
+		if err := binary.Read(c.rw, binary.BigEndian, &ext); err != nil {
+			return 0, false, false, 0, err
+		}
+		if ext > (1<<31 - 1) {
+			return 0, false, false, 0, fmt.Errorf("frame too large")
+		}
+		length = int(ext)
+	}
+	return opcode, fin, masked, length, nil
+}
+
+func (c *wsClientConn) readMaskKey(masked bool) ([4]byte, error) {
+	var mask [4]byte
+	if !masked {
+		return mask, nil
+	}
+	if _, err := io.ReadFull(c.rw, mask[:]); err != nil {
+		return mask, err
+	}
+	return mask, nil
+}
+
+func (c *wsClientConn) readPayload(length int) ([]byte, error) {
+	payload := make([]byte, length)
+	if _, err := io.ReadFull(c.rw, payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func applyMask(payload []byte, mask [4]byte) {
+	for i := range payload {
+		payload[i] ^= mask[i%4]
 	}
 }
 
@@ -856,11 +979,7 @@ func parseUint32(v string) (uint32, error) {
 }
 
 func joinURL(base, path string) string {
-	base = normalizeBaseURL(base)
-	if strings.HasSuffix(base, "/") {
-		base = strings.TrimSuffix(base, "/")
-	}
-	return base + path
+	return normalizeBaseURL(base) + path
 }
 
 func normalizeBaseURL(in string) string {

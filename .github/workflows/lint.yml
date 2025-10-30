@@ -17,6 +17,7 @@ jobs:
           - services/gateway
           - services/crypto-core
           - services/keys
+          - services/messages
 
     steps:
       - uses: actions/checkout@v4

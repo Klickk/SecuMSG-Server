@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"messages/internal/msgjson"
 	"messages/internal/store"
-	"messages/internal/types"
 )
 
 type Service struct {
@@ -43,7 +43,7 @@ func (s *Service) Enqueue(ctx context.Context, in SendInput) (store.Message, err
 		FromDeviceID: in.FromDeviceID,
 		ToDeviceID:   in.ToDeviceID,
 		Ciphertext:   append([]byte(nil), in.Ciphertext...),
-		Header:       types.JSON(append([]byte(nil), in.Header...)),
+		Header:       msgjson.JSON(append([]byte(nil), in.Header...)),
 		SentAt:       s.now().UTC(),
 	}
 	if err := s.store.Create(ctx, &msg); err != nil {

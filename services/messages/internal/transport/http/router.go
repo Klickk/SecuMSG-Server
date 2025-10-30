@@ -254,11 +254,11 @@ func acceptWebSocket(w http.ResponseWriter, r *http.Request) (*wsServerConn, err
 	}
 	response := fmt.Sprintf("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n", accept)
 	if _, err := rw.WriteString(response); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	if err := rw.Flush(); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 	return &wsServerConn{conn: conn, w: bufio.NewWriter(conn)}, nil

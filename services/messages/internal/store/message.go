@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"messages/internal/types"
+	"messages/internal/msgjson"
 )
 
 type Message struct {
@@ -16,7 +16,7 @@ type Message struct {
 	FromDeviceID uuid.UUID      `gorm:"type:uuid;not null"`
 	ToDeviceID   uuid.UUID      `gorm:"type:uuid;not null;index:idx_messages_to_device_sent,priority:1"`
 	Ciphertext   []byte         `gorm:"type:bytea;not null"`
-	Header       types.JSON     `gorm:"type:jsonb;not null"`
+	Header       msgjson.JSON   `gorm:"type:jsonb;not null"`
 	SentAt       time.Time      `gorm:"not null;default:now();index:idx_messages_to_device_sent,priority:2"`
 	ReceivedAt   *time.Time     `gorm:"type:timestamptz"`
 	DeliveredAt  *time.Time     `gorm:"type:timestamptz"`
