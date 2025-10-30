@@ -83,13 +83,15 @@ services:
     build: ../services/gateway
     environment:
       AUTH_BASE_URL: http://auth:8081
+      KEYS_BASE_URL: http://keys:8082
+      MESSAGES_BASE_URL: http://messages:8084
       ISSUER: http://auth:8081
       JWKS_URL: http://auth:8081/v1/oauth/jwks
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
       GATEWAY_SHARED_HS256_SECRET: "dev-super-secret-change-me" # must match auth SIGNING_KEY
       GATEWAY_DEBUG: "true"
     ports: ["8080:8080"]
-    depends_on: [auth]
+    depends_on: [auth, keys, messages]
     networks: [appnet]
 
   keys:
@@ -101,6 +103,16 @@ services:
     depends_on:
       - postgres
       - migrate-keys
+    networks: [appnet]
+
+  messages:
+    build: ../services/messages
+    environment:
+      MESSAGES_DATABASE_URL: postgres://app:secret@postgres:5432/messagesdb?sslmode=disable
+      MESSAGES_ADDR: :8084
+    ports: ["8084:8084"]
+    depends_on:
+      - postgres
     networks: [appnet]
 
 networks:
