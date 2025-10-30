@@ -28,9 +28,10 @@ create_db_if_missing() {
 
 create_db_if_missing "authdb"
 create_db_if_missing "keysdb"
+create_db_if_missing "messagesdb"
 
-# Enable common extensions in both DBs
-for DB in authdb keysdb; do
+# Enable common extensions in all DBs
+for DB in authdb keysdb messagesdb; do
   psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${DB}" -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
   psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d "${DB}" -c "CREATE EXTENSION IF NOT EXISTS citext;"
 done

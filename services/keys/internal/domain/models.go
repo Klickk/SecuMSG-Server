@@ -18,10 +18,11 @@ type Device struct {
 }
 
 type IdentityKey struct {
-	DeviceID  uuid.UUID `gorm:"type:uuid;primaryKey"`
-	PublicKey string    `gorm:"type:text;not null"`
-	CreatedAt time.Time `gorm:"not null;autoCreateTime"`
-	UpdatedAt time.Time `gorm:"not null;autoUpdateTime"`
+	DeviceID     uuid.UUID `gorm:"type:uuid;primaryKey"`
+	PublicKey    string    `gorm:"type:text;not null"`
+	SignatureKey string    `gorm:"type:text;not null"`
+	CreatedAt    time.Time `gorm:"not null;autoCreateTime"`
+	UpdatedAt    time.Time `gorm:"not null;autoUpdateTime"`
 }
 
 type SignedPreKey struct {

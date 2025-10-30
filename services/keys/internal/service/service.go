@@ -21,7 +21,7 @@ func New(store *store.Store) *Service {
 }
 
 func (s *Service) RegisterDevice(ctx context.Context, req dto.RegisterDeviceRequest) (dto.RegisterDeviceResponse, error) {
-	if req.IdentityKey == "" || req.SignedPreKey.PublicKey == "" || req.SignedPreKey.Signature == "" {
+	if req.IdentityKey == "" || req.IdentitySignatureKey == "" || req.SignedPreKey.PublicKey == "" || req.SignedPreKey.Signature == "" {
 		return dto.RegisterDeviceResponse{}, fmt.Errorf("%w: missing key material", ErrInvalidRequest)
 	}
 
@@ -62,7 +62,7 @@ func (s *Service) RegisterDevice(ctx context.Context, req dto.RegisterDeviceRequ
 		if err := tx.Devices().Upsert(ctx, domain.Device{ID: deviceID, UserID: userID}); err != nil {
 			return err
 		}
-		if err := tx.IdentityKeys().Upsert(ctx, domain.IdentityKey{DeviceID: deviceID, PublicKey: req.IdentityKey}); err != nil {
+		if err := tx.IdentityKeys().Upsert(ctx, domain.IdentityKey{DeviceID: deviceID, PublicKey: req.IdentityKey, SignatureKey: req.IdentitySignatureKey}); err != nil {
 			return err
 		}
 		if err := tx.SignedPreKeys().Upsert(ctx, domain.SignedPreKey{DeviceID: deviceID, PublicKey: req.SignedPreKey.PublicKey, Signature: req.SignedPreKey.Signature, CreatedAt: createdAt}); err != nil {
@@ -115,8 +115,9 @@ func (s *Service) GetPreKeyBundle(ctx context.Context, deviceID uuid.UUID) (dto.
 	}
 
 	resp := dto.PreKeyBundleResponse{
-		DeviceID:    deviceID.String(),
-		IdentityKey: identity.PublicKey,
+		DeviceID:             deviceID.String(),
+		IdentityKey:          identity.PublicKey,
+		IdentitySignatureKey: identity.SignatureKey,
 		SignedPreKey: dto.SignedPreKey{
 			PublicKey: signed.PublicKey,
 			Signature: signed.Signature,

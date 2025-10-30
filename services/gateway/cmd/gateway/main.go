@@ -4,6 +4,8 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -20,12 +22,26 @@ import (
 
 func main() {
 	authBase := envOr("AUTH_BASE_URL", "http://localhost:8081")
+	keysBase := envOr("KEYS_BASE_URL", "http://localhost:8082")
+	messagesBase := envOr("MESSAGES_BASE_URL", "http://localhost:8084")
 	issuer := envOr("ISSUER", "http://localhost:8081")
 	jwksURL := envOr("JWKS_URL", issuer+"/v1/oauth/jwks")
 	sharedHS := os.Getenv("GATEWAY_SHARED_HS256_SECRET") // if set → use HS256 shared secret
 
 	// Prepare Auth proxy client
 	p := proxy.New(authBase, 10*time.Second)
+	keysProxy := proxy.New(keysBase, 10*time.Second)
+	messagesProxy := proxy.New(messagesBase, 10*time.Second)
+
+	msgWSURL, err := url.Parse(messagesBase)
+	if err != nil {
+		log.Fatalf("invalid MESSAGES_BASE_URL: %v", err)
+	}
+	msgWSProxy := httputil.NewSingleHostReverseProxy(msgWSURL)
+	msgWSProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("gateway: websocket proxy error: %v", err)
+		http.Error(w, "upstream unavailable", http.StatusBadGateway)
+	}
 
 	r := chi.NewRouter()
 
@@ -65,6 +81,25 @@ func main() {
 		r.Post("/login", p.ForwardJSON("/v1/auth/login"))
 		r.Post("/refresh", p.ForwardJSON("/v1/auth/refresh"))
 	})
+
+	// -------- Key service proxy --------
+	r.Route("/keys", func(r chi.Router) {
+		r.Post("/device/register", keysProxy.ForwardJSON("/keys/device/register"))
+		r.Get("/bundle", keysProxy.ForwardJSON("/keys/bundle"))
+		r.Post("/rotate-signed-prekey", keysProxy.ForwardJSON("/keys/rotate-signed-prekey"))
+	})
+
+	// -------- Message service proxy --------
+	r.Post("/messages/send", messagesProxy.ForwardJSON("/messages/send"))
+	wsHandler := func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		msgWSProxy.ServeHTTP(w, req)
+	}
+	r.HandleFunc("/ws", wsHandler)
+	r.HandleFunc("/messages/ws", wsHandler)
 
 	// -------- Protected example route --------
 	// choose validator: HS256 shared secret (if provided) else JWKS

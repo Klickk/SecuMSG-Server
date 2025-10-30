@@ -37,9 +37,10 @@ func TestRegisterAndFetchBundles(t *testing.T) {
 	deviceID := uuid.New().String()
 
 	req := dto.RegisterDeviceRequest{
-		UserID:      userID,
-		DeviceID:    deviceID,
-		IdentityKey: "identity-1",
+		UserID:               userID,
+		DeviceID:             deviceID,
+		IdentityKey:          "identity-1",
+		IdentitySignatureKey: "identity-sig-1",
 		SignedPreKey: dto.SignedPreKey{
 			PublicKey: "signed-1",
 			Signature: "sig-1",
@@ -70,6 +71,9 @@ func TestRegisterAndFetchBundles(t *testing.T) {
 	}
 	if bundle1.IdentityKey != req.IdentityKey {
 		t.Fatalf("expected identity key %s, got %s", req.IdentityKey, bundle1.IdentityKey)
+	}
+	if bundle1.IdentitySignatureKey != req.IdentitySignatureKey {
+		t.Fatalf("expected identity signature key %s, got %s", req.IdentitySignatureKey, bundle1.IdentitySignatureKey)
 	}
 	if bundle1.SignedPreKey.PublicKey != req.SignedPreKey.PublicKey {
 		t.Fatalf("expected signed prekey %s, got %s", req.SignedPreKey.PublicKey, bundle1.SignedPreKey.PublicKey)
@@ -114,8 +118,9 @@ func TestRotateSignedPreKey(t *testing.T) {
 	deviceID := uuid.New().String()
 
 	_, err := svc.RegisterDevice(context.Background(), dto.RegisterDeviceRequest{
-		DeviceID:    deviceID,
-		IdentityKey: "identity-rotate",
+		DeviceID:             deviceID,
+		IdentityKey:          "identity-rotate",
+		IdentitySignatureKey: "identity-sig-rotate",
 		SignedPreKey: dto.SignedPreKey{
 			PublicKey: "signed-initial",
 			Signature: "sig-initial",
