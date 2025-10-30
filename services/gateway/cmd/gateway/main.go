@@ -49,7 +49,7 @@ func main() {
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
-	r.Use(chimw.Timeout(30 * time.Second))
+	r.Use(TimeoutExceptWS(30 * time.Second))
 
 	// rate limit (e.g., 100 req / minute by IP)
 	r.Use(httprate.LimitByIP(100, 1*time.Minute))
@@ -156,4 +156,49 @@ func originsIfSet(in []string) []string {
 		return []string{"*"}
 	}
 	return out
+}
+
+
+func TimeoutExceptWS(d time.Duration) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            // Skip if WebSocket upgrade
+            if strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade") &&
+                strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+                next.ServeHTTP(w, r)
+                return
+            }
+
+            // Standard timeout handling for normal HTTP
+            ctx, cancel := context.WithTimeout(r.Context(), d)
+            defer cancel()
+
+            // Use a ResponseWriter that stops writes after context deadline
+            done := make(chan struct{})
+            tw := &timeoutWriter{ResponseWriter: w}
+            go func() {
+                next.ServeHTTP(tw, r.WithContext(ctx))
+                close(done)
+            }()
+
+            select {
+            case <-ctx.Done():
+                // only write if handler hasn't already started/hijacked
+                if !tw.wroteHeader {
+                    http.Error(w, "timeout", http.StatusGatewayTimeout)
+                }
+            case <-done:
+            }
+        })
+    }
+}
+
+type timeoutWriter struct {
+    http.ResponseWriter
+    wroteHeader bool
+}
+
+func (tw *timeoutWriter) WriteHeader(code int) {
+    tw.wroteHeader = true
+    tw.ResponseWriter.WriteHeader(code)
 }

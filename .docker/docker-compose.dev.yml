@@ -106,13 +106,16 @@ services:
     networks: [appnet]
 
   messages:
-    build: ../services/messages
+    build:
+      context: ../
+      dockerfile: services/messages/Dockerfile
     environment:
       MESSAGES_DATABASE_URL: postgres://app:secret@postgres:5432/messagesdb?sslmode=disable
       MESSAGES_ADDR: :8084
     ports: ["8084:8084"]
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks: [appnet]
 
 networks:

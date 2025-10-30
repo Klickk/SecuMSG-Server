@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"time"
-
-	"github.com/google/uuid"
+	"log"
 
 	"messages/internal/msgjson"
 	"messages/internal/store"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 type Service struct {
@@ -46,6 +47,7 @@ func (s *Service) Enqueue(ctx context.Context, in SendInput) (store.Message, err
 		Header:       msgjson.JSON(append([]byte(nil), in.Header...)),
 		SentAt:       s.now().UTC(),
 	}
+	log.Printf("enqueue msg: %+v", msg)
 	if err := s.store.Create(ctx, &msg); err != nil {
 		return store.Message{}, err
 	}
