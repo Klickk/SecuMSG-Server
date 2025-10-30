@@ -4,58 +4,37 @@ name: Lint
 on:
   pull_request:
   push:
-    branches: [ main ]
-
-# jobs:
-#   golangci:
-#     runs-on: ubuntu-latest
-#     strategy:
-#       fail-fast: false
-#       matrix:
-#         module:
-#           - services/auth
-#           - services/gateway
-#           - services/crypto-core
-#           - services/keys
-#           - services/messages
-
-#     steps:
-#       - uses: actions/checkout@v4
-
-#       - name: Show module
-#         run: ls -la ${{ matrix.module }}
-
-#       - name: Lint ${{ matrix.module }}
-#         run: |
-#           docker run --rm \
-#             -v "$PWD/${{ matrix.module }}":/app \
-#             -w /app \
-#             golangci/golangci-lint:latest \
-#             golangci-lint run --timeout=5m
-
+    branches: [main]
 
 jobs:
   golangci:
     runs-on: ubuntu-latest
-
     strategy:
+      fail-fast: false
       matrix:
-        service: [auth, keys, messages, gateway]
-        # add more service folders here if needed
+        module:
+          - services/auth
+          - services/gateway
+          - services/crypto-core
+          - services/keys
+          - services/messages
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25.x' # or your Go version
+      - name: Show module
+        run: ls -la ${{ matrix.module }}
 
-      - name: Run golangci-lint for ${{ matrix.service }}
-        uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          # Run from the repo root so ../crypto-core exists,
-          # but lint only the selected service’s module.
-          args: -C services/${{ matrix.service }} ./... --timeout=5m
+      - name: Lint ${{ matrix.module }}
+        run: |
+          docker run --rm \
+            -v "$PWD":/repo \
+            -w /repo/${{ matrix.module }} \
+            golangci/golangci-lint:latest \
+            golangci-lint run --timeout=5m
+
+        # docker run --rm \
+        #     -v "$PWD/${{ matrix.module }}":/app \
+        #     -w /app \
+        #     golangci/golangci-lint:latest \
+        #     golangci-lint run --timeout=5m
