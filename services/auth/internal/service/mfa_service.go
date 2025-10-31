@@ -1,9 +1,8 @@
 package service
 
 import (
-	"context"
-
 	"auth/internal/domain"
+	"context"
 )
 
 type MFAService interface {

@@ -45,7 +45,8 @@ func (s *stubPasswordService) Verify(password string, cred interface {
 	GetSalt() []byte
 	GetParamsJSON() []byte
 	GetPasswordVer() int
-}) (rehashNeeded bool, ok bool) {
+},
+) (rehashNeeded bool, ok bool) {
 	s.verifyCalls = append(s.verifyCalls, struct {
 		password string
 		algo     string
@@ -344,7 +345,8 @@ func TestAuthServiceLoginWithEmailSuccess(t *testing.T) {
 			GetSalt() []byte
 			GetParamsJSON() []byte
 			GetPasswordVer() int
-		}) (bool, bool) {
+		},
+		) (bool, bool) {
 			if password != "super-secret" {
 				t.Fatalf("unexpected password in verify: %q", password)
 			}
@@ -413,7 +415,8 @@ func TestAuthServiceLoginRehashesWhenNeeded(t *testing.T) {
 			GetSalt() []byte
 			GetParamsJSON() []byte
 			GetPasswordVer() int
-		}) (bool, bool) {
+		},
+		) (bool, bool) {
 			return true, true
 		},
 		hashFunc: func(password string) (hash, salt, paramsJSON []byte, algo string, ver int, err error) {

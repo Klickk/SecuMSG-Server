@@ -1,16 +1,63 @@
 version: "2"
+# run:
+#   issues-exit-code: 1
+#   tests: true
+# linters:
+#   enable:
+#     - gocyclo
+#     - revive
+#   settings:
+#     gocyclo:
+#       min-complexity: 18
+#     revive:
+#       rules:
+#         - name: exported
+#           severity: warning
+#           disabled: true
+#         - name: var-naming
+#         - name: blank-imports
+#         - name: indent-error-flow
+#         - name: empty-lines
+#         - name: errorf
+#   exclusions:
+#     generated: lax
+#     rules:
+#       - linters:
+#           - gocyclo
+#         path: _test\.go
+#     paths:
+#       - third_party$
+#       - builtin$
+#       - examples$
+# formatters:
+#   enable:
+#     - gofumpt
+#   settings:
+#     gofumpt:
+#       extra-rules: true
+#   exclusions:
+#     generated: lax
+#     paths:
+#       - third_party$
+#       - builtin$
+#       - examples$
+
 run:
-  issues-exit-code: 1
-  tests: true
+  timeout: 5m
+  go: "1.25" # match your module version exactly
+  tests: false
+
 linters:
   enable:
-    - gocyclo
+    - govet
     - misspell
     - revive
-    - unparam
+    - staticcheck
+    - errcheck
+    - unused
+    - revive
+    - ineffassign
   settings:
-    gocyclo:
-      min-complexity: 18
     revive:
       rules:
         - name: exported
@@ -21,25 +68,16 @@ linters:
         - name: indent-error-flow
         - name: empty-lines
         - name: errorf
-  exclusions:
-    generated: lax
-    rules:
-      - linters:
-          - gocyclo
-        path: _test\.go
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
-formatters:
-  enable:
-    - gofumpt
-  settings:
-    gofumpt:
-      extra-rules: true
-  exclusions:
-    generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
+
+linters-settings:
+  gofumpt:
+    # disable extra-rules to match plain gofumpt -w behaviour
+    extra-rules: false
+    lang-version: "1.25"
+
+issues:
+  exclude-use-default: false
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck

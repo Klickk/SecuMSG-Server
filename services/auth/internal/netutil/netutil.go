@@ -1,9 +1,8 @@
 package netutil
 
 import (
-	"strings"
-
 	"net/netip"
+	"strings"
 	"unicode/utf8"
 )
 

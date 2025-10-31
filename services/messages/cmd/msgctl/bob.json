@@ -1,0 +1,38 @@
+{
+  "user_id": "88805d1d-9574-4670-9a1c-fd305470bd3b",
+  "device_id": "b38dcf64-dc1c-4632-bf74-2b61eb332537",
+  "keys_base_url": "http://localhost:8080",
+  "messages_base_url": "http://localhost:8080",
+  "device": {
+    "signingPrivate": "+2BF77CucOdHmRkHb98AJ/OQYd9rqL9YVcGa9UZXkgjZhalhDrvs7b96rEiLSrlOENyKoEQSWrkZBl8lPcxHGA==",
+    "signingPublic": "2YWpYQ677O2/eqxIi0q5ThDciqBEElq5GQZfJT3MRxg=",
+    "dhPrivate": "UD5EYtHHVmm0tSJ6Te1WMNDNuAwMXMDAMeryJYqp+XE=",
+    "dhPublic": "QEmXG81W15GMM8oDV2OizL2RFo7w3SPYxDhfNdbxv3E=",
+    "signedPrekey": {
+      "private": "+ErBB8EywO/jp5fx/em9zIm5Q64ArN00KJMsf8pANHI=",
+      "public": "Lrgj1ad+IWAhdwXEgFZSXwSj4aMOyf1Mld5CVKi9xU4="
+    },
+    "signedPrekeySig": "zI/SUvd+wKzAZOhH+kJ3H16+VttvMuIq79bblW9GAh5HE6XNT5CKVR3a4pXaslg1zWRQiHEXFwZMCS103iEpAA==",
+    "nextOtkId": 1
+  },
+  "sessions": {
+    "78b8aa59-752c-478d-b16a-db9391d9e0ee": {
+      "rootKey": "QoRTccovocwtO2BzZZqlilHUc9jlN1eRzhFHUoAcJkw=",
+      "sendChain": {
+        "key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "index": 0
+      },
+      "recvChain": {
+        "key": "m4LQmr9GnzJ5iyn1NM+75lM7/tsXnxpGWOs5aonkKSY=",
+        "index": 3
+      },
+      "ratchetPrivate": "+ErBB8EywO/jp5fx/em9zIm5Q64ArN00KJMsf8pANHI=",
+      "ratchetPublic": "Lrgj1ad+IWAhdwXEgFZSXwSj4aMOyf1Mld5CVKi9xU4=",
+      "remoteRatchet": "8/y7ieilrH3ARhQp5K2UCnayaPaI7rDKoTFNjyLxwxY=",
+      "remoteIdentity": "uq+fnrC1dO6/hNjKdT143f6SX5BhcL2d9KjjMV9Avik=",
+      "remoteSignature": "Jhzao3hFpnl5062+xs6P/thLo/4RUo2xcKoqDpsEpRU=",
+      "pn": 0,
+      "role": 1
+    }
+  }
+}

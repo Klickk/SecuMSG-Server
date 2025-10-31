@@ -1,9 +1,8 @@
 package store
 
 import (
-	"context"
-
 	"auth/internal/domain"
+	"context"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -26,7 +25,7 @@ func (u *UserStore) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, er
 		if err == gorm.ErrRecordNotFound {
 			return nil, ErrRecordNotFound
 		}
-		
+
 		return nil, err
 	}
 	return &user, nil

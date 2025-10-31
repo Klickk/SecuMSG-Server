@@ -1,8 +1,9 @@
 go 1.25.1
 
 use (
-	./services/auth
-	./services/crypto-core
-	./services/gateway
-	./services/keys
+./services/auth
+./services/crypto-core
+./services/gateway
+./services/keys
+./services/messages
 )

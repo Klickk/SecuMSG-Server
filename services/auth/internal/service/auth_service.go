@@ -1,9 +1,8 @@
 package service
 
 import (
-	"context"
-
 	"auth/internal/dto"
+	"context"
 )
 
 type AuthService interface {

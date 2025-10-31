@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+
 	"keys/internal/domain"
 
 	"github.com/google/uuid"
@@ -16,8 +17,11 @@ func (s *Store) IdentityKeys() *IdentityKeyStore { return &IdentityKeyStore{db: 
 func (i *IdentityKeyStore) Upsert(ctx context.Context, key domain.IdentityKey) error {
 	return i.db.WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "device_id"}},
-			DoUpdates: clause.Assignments(map[string]any{"public_key": key.PublicKey}),
+			Columns: []clause.Column{{Name: "device_id"}},
+			DoUpdates: clause.Assignments(map[string]any{
+				"public_key":    key.PublicKey,
+				"signature_key": key.SignatureKey,
+			}),
 		}).
 		Create(&key).Error
 }

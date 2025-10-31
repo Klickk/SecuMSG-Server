@@ -8,11 +8,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"keys/internal/dto"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"keys/internal/dto"
 
 	"github.com/google/uuid"
 )
@@ -50,13 +51,14 @@ func usage() {
 }
 
 type registerOpts struct {
-	baseURL   string
-	userID    string
-	deviceID  string
-	identity  string
-	signed    string
-	signature string
-	count     int
+	baseURL     string
+	userID      string
+	deviceID    string
+	identity    string
+	identitySig string
+	signed      string
+	signature   string
+	count       int
 }
 
 func runRegister(args []string) error {
@@ -119,10 +121,11 @@ func parseRegisterFlags(args []string) (registerOpts, error) {
 	fs.SetOutput(io.Discard)
 
 	var o registerOpts
-	fs.StringVar(&o.baseURL, "base-url", getenv("KEYCTL_BASE_URL", "http://localhost:8082"), "key service base URL")
+	fs.StringVar(&o.baseURL, "base-url", getenv("KEYCTL_BASE_URL", "http://localhost:8080"), "key service base URL")
 	fs.StringVar(&o.userID, "user", "", "user UUID (optional; generated if empty)")
 	fs.StringVar(&o.deviceID, "device", "", "device UUID (optional; generated if empty)")
 	fs.StringVar(&o.identity, "identity", "", "identity key (base64; generated if empty)")
+	fs.StringVar(&o.identitySig, "identity-sig", "", "identity signature key (base64; generated if empty)")
 	fs.StringVar(&o.signed, "signed", "", "signed pre-key (base64; generated if empty)")
 	fs.StringVar(&o.signature, "signature", "", "signed pre-key signature (base64; generated if empty)")
 	fs.IntVar(&o.count, "count", 5, "number of one-time pre-keys to generate")
@@ -138,9 +141,10 @@ func parseRegisterFlags(args []string) (registerOpts, error) {
 
 func buildRegisterPayload(o registerOpts) (dto.RegisterDeviceRequest, error) {
 	p := dto.RegisterDeviceRequest{
-		UserID:      strings.TrimSpace(o.userID),
-		DeviceID:    strings.TrimSpace(o.deviceID),
-		IdentityKey: strings.TrimSpace(o.identity),
+		UserID:               strings.TrimSpace(o.userID),
+		DeviceID:             strings.TrimSpace(o.deviceID),
+		IdentityKey:          strings.TrimSpace(o.identity),
+		IdentitySignatureKey: strings.TrimSpace(o.identitySig),
 		SignedPreKey: dto.SignedPreKey{
 			PublicKey: strings.TrimSpace(o.signed),
 			Signature: strings.TrimSpace(o.signature),
@@ -151,6 +155,11 @@ func buildRegisterPayload(o registerOpts) (dto.RegisterDeviceRequest, error) {
 	var err error
 	if p.IdentityKey == "" {
 		if p.IdentityKey, err = randomKey(32); err != nil {
+			return dto.RegisterDeviceRequest{}, err
+		}
+	}
+	if p.IdentitySignatureKey == "" {
+		if p.IdentitySignatureKey, err = randomKey(32); err != nil {
 			return dto.RegisterDeviceRequest{}, err
 		}
 	}
@@ -193,7 +202,7 @@ func runBundle(args []string) error {
 	fs := flag.NewFlagSet("bundle", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 
-	baseURL := fs.String("base-url", getenv("KEYCTL_BASE_URL", "http://localhost:8082"), "key service base URL")
+	baseURL := fs.String("base-url", getenv("KEYCTL_BASE_URL", "http://localhost:8080"), "key service base URL")
 	deviceID := fs.String("device", "", "device UUID")
 
 	if err := fs.Parse(args); err != nil {

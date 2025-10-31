@@ -66,9 +66,11 @@ func (h *HMACValidator) Middleware(next http.Handler) http.Handler {
 
 // Small local helpers so we don't import another package
 type subjectKey struct{}
+
 func contextWithSubject(ctx context.Context, sub string) context.Context {
 	return context.WithValue(ctx, subjectKey{}, sub)
 }
+
 func SubjectFrom(ctx context.Context) (string, bool) {
 	v, ok := ctx.Value(subjectKey{}).(string)
 	return v, ok

@@ -1,10 +1,9 @@
 package store
 
 import (
+	"auth/internal/domain"
 	"context"
 	"time"
-
-	"auth/internal/domain"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -46,6 +45,7 @@ func (ss *SessionStore) RevokeAllForUser(ctx context.Context, userID uuid.UUID, 
 		Update("revoked_at", at)
 	return tx.RowsAffected, tx.Error
 }
+
 func (ss *SessionStore) Rotate(ctx context.Context, sessionID uuid.UUID, newRefreshID uuid.UUID, newExpiresAt time.Time, ip, ua string) error {
 	return ss.db.WithContext(ctx).
 		Model(&domain.Session{}).

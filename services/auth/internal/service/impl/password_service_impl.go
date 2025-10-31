@@ -60,9 +60,10 @@ func (p *PasswordServiceImpl) Verify(password string, cred interface {
 	GetSalt() []byte
 	GetParamsJSON() []byte
 	GetPasswordVer() int
-}) (rehashNeeded bool, ok bool) {
+},
+) (rehashNeeded bool, ok bool) {
 	if cred.GetAlgo() != p.algoName {
-		return true, false // different algorithm, request rehash on success	
+		return true, false // different algorithm, request rehash on success
 	}
 	var stored Argon2Params
 	if err := json.Unmarshal(cred.GetParamsJSON(), &stored); err != nil {

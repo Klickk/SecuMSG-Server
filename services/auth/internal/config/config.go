@@ -26,12 +26,12 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		DatabaseURL: getenv("DATABASE_URL", "postgres://app:secret@localhost:5432/appdb?sslmode=disable"),
-		Issuer:      getenv("ISSUER", "http://localhost:8081"),
-		Audience:    getenv("AUDIENCE", "client"),
-		AccessTTL:   getdur("ACCESS_TTL", 15*time.Minute),
-		RefreshTTL:  getdur("REFRESH_TTL", 30*24*time.Hour),
-		SigningKey:  must("SIGNING_KEY"),
+		DatabaseURL:  getenv("DATABASE_URL", "postgres://app:secret@localhost:5432/appdb?sslmode=disable"),
+		Issuer:       getenv("ISSUER", "http://localhost:8081"),
+		Audience:     getenv("AUDIENCE", "client"),
+		AccessTTL:    getdur("ACCESS_TTL", 15*time.Minute),
+		RefreshTTL:   getdur("REFRESH_TTL", 30*24*time.Hour),
+		SigningKey:   must("SIGNING_KEY"),
 		SigningKeyID: getenv("SIGNING_KEY_ID", "kid-1"),
 
 		Addr:       getenv("ADDR", ":8081"),

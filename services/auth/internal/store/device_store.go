@@ -1,14 +1,15 @@
 package store
 
 import (
+	"auth/internal/domain"
 	"context"
 	"time"
-	"auth/internal/domain"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-type DeviceStore struct{ db *gorm.DB}
+type DeviceStore struct{ db *gorm.DB }
 
 func (s *Store) Devices() *DeviceStore { return &DeviceStore{db: s.DB} }
 

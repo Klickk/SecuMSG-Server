@@ -62,3 +62,16 @@ jobs:
           go vet ./...
           go test ./... -v
           go build ./...
+
+      - name: Set up Go (messages)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: services/messages/go.mod
+
+      - name: Tidy + build + test (messages)
+        working-directory: services/messages
+        run: |
+          go mod tidy
+          go vet ./...
+          go test ./... -v
+          go build ./...

@@ -17,6 +17,6 @@ type DeviceKeyBundleRequest struct {
 }
 
 type RegisterResponse struct {
-	UserID                  string `json:"userId"`
-	RequiresEmailVerification bool `json:"requiresEmailVerification"`
+	UserID                    string `json:"userId"`
+	RequiresEmailVerification bool   `json:"requiresEmailVerification"`
 }

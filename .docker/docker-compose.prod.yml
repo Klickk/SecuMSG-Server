@@ -87,14 +87,28 @@ services:
     ports: ["8082:8082"]
     restart: unless-stopped
 
+  messages:
+    image: ${REGISTRY}/${OWNER}/${REPO}/messages:${TAG}
+    depends_on:
+      - postgres
+    networks: [appnet]
+    environment:
+      MESSAGES_DATABASE_URL: "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/messagesdb?sslmode=disable"
+      MESSAGES_ADDR: ":8084"
+    ports: ["8084:8084"]
+    restart: unless-stopped
+
   gateway:
     image: ${REGISTRY}/${OWNER}/${REPO}/gateway:${TAG}
     depends_on:
       - auth
       - keys
+      - messages
     networks: [appnet]
     environment:
       AUTH_BASE_URL: "http://auth:8081"
+      KEYS_BASE_URL: "http://keys:8082"
+      MESSAGES_BASE_URL: "http://messages:8084"
       ISSUER: "http://auth:8081"
       # HS256 shared secret must match auth SIGNING_KEY
       GATEWAY_SHARED_HS256_SECRET: ${SIGNING_KEY}

@@ -16,4 +16,3 @@ func NewHTTPHandler(_ interface{}) *http.ServeMux {
 	// mux.Handle("/v1/devices/", deviceHandler(...))
 	return mux
 }
- 

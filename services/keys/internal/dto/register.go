@@ -14,11 +14,12 @@ type OneTimePreKey struct {
 }
 
 type RegisterDeviceRequest struct {
-	UserID         string          `json:"userId"`
-	DeviceID       string          `json:"deviceId"`
-	IdentityKey    string          `json:"identityKey"`
-	SignedPreKey   SignedPreKey    `json:"signedPreKey"`
-	OneTimePreKeys []OneTimePreKey `json:"oneTimePreKeys"`
+	UserID               string          `json:"userId"`
+	DeviceID             string          `json:"deviceId"`
+	IdentityKey          string          `json:"identityKey"`
+	IdentitySignatureKey string          `json:"identitySignatureKey"`
+	SignedPreKey         SignedPreKey    `json:"signedPreKey"`
+	OneTimePreKeys       []OneTimePreKey `json:"oneTimePreKeys"`
 }
 
 type RegisterDeviceResponse struct {

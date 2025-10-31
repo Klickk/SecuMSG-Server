@@ -1,10 +1,9 @@
 package service
 
 import (
-	"context"
-
 	"auth/internal/domain"
 	"auth/internal/dto"
+	"context"
 )
 
 type DeviceService interface {

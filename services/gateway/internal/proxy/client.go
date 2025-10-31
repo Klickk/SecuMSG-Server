@@ -40,6 +40,9 @@ func (c *Client) ForwardJSON(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		upURL := c.baseURL + path
+		if qs := r.URL.RawQuery; qs != "" {
+			upURL += "?" + qs
+		}
 
 		// Build upstream request; stream body as-is.
 		req, err := http.NewRequestWithContext(r.Context(), r.Method, upURL, r.Body)
@@ -91,9 +94,9 @@ func (c *Client) ForwardJSON(path string) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
-	       defer func() {
-		       _ = resp.Body.Close()
-	       }()
+		defer func() {
+			_ = resp.Body.Close()
+		}()
 
 		// If upstream errored, buffer a small portion for logs, then relay it back.
 		var bodyBuf []byte
@@ -116,7 +119,7 @@ func (c *Client) ForwardJSON(path string) http.HandlerFunc {
 		dur := time.Since(start)
 		rid := r.Header.Get("X-Request-Id")
 		log.Printf("proxy %-6s %s -> %s %d in %v rid=%s ct=%s",
-			r.Method, r.URL.Path, path, resp.StatusCode, dur, rid, r.Header.Get("Content-Type"))
+			r.Method, r.URL.RequestURI(), path, resp.StatusCode, dur, rid, r.Header.Get("Content-Type"))
 
 		// Debug: log a snippet of the upstream error body
 		if resp.StatusCode >= 400 && c.debug && len(bodyBuf) > 0 {
