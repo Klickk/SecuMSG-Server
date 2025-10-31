@@ -94,6 +94,17 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.REPO_LC }}/keys-migrations:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Build & push messages-migrations
+        uses: docker/build-push-action@v6
+        with:
+          context: ./services/messages/migrations
+          file: ./services/messages/migrations/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.REPO_LC }}/messages-migrations:${{ env.SHA_TAG }}
+            ${{ env.REGISTRY }}/${{ env.OWNER_LC }}/${{ env.REPO_LC }}/messages-migrations:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Build & push messages
         uses: docker/build-push-action@v6
         with:

@@ -154,8 +154,8 @@ Where `<tag>` is either `latest` or `sha-<commit>`.
 
 ### Development (`.docker/docker-compose.dev.yml`)
 
-- **Services:** `postgres`, `migrate-auth`, `auth`, `gateway` (and more as you add them).
-- **Migrations:** a migration container (`auth-migrations`) runs to apply DB schema.
+- **Services:** `postgres`, `migrate-auth`, `migrate-keys`, `migrate-messages`, `auth`, `keys`, `messages`, `gateway`.
+- **Migrations:** migration containers (auth/keys/messages) apply schemas before services start.
 - **Auth env:** example values (dev secrets), healthchecks, published ports.
 - **Makefile shortcuts:**
   ```Makefile
@@ -168,7 +168,7 @@ Where `<tag>` is either `latest` or `sha-<commit>`.
 ### Production (`.docker/docker-compose.prod.yml`)
 
 - Uses **env-file substitution** for secrets and options (from `.docker/.env.prod`).
-- **Depends_on** ensures migrations finish before starting `auth`/`gateway`.
+- **Depends_on** ensures each migration container (auth/keys/messages) finishes before dependent services.
 - Typical **env** variables for `auth` include:
   - `DATABASE_URL=postgres://app:${{POSTGRES_PASSWORD}}@postgres:5432/appdb?sslmode=disable`
   - `SIGNING_KEY` (HS256 secret)
