@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"messages/internal/service"
 	"net"
 	"net/http"
 	"strings"
@@ -16,8 +17,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	"messages/internal/service"
 )
 
 type Handler struct {

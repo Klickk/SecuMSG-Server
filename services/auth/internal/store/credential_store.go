@@ -1,10 +1,9 @@
 package store
 
 import (
+	"auth/internal/domain"
 	"context"
 	"time"
-
-	"auth/internal/domain"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"

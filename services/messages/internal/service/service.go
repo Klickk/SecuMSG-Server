@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"time"
-
 	"messages/internal/msgjson"
 	"messages/internal/store"
+	"time"
 
 	"github.com/google/uuid"
 )

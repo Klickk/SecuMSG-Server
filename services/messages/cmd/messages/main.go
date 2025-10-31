@@ -3,13 +3,12 @@ package main
 import (
 	"context"
 	"log"
-	"net/http"
-	"time"
-
 	"messages/internal/config"
 	"messages/internal/service"
 	"messages/internal/store"
 	transport "messages/internal/transport/http"
+	"net/http"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"

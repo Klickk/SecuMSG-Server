@@ -2,12 +2,11 @@ package store
 
 import (
 	"context"
+	"messages/internal/msgjson"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-
-	"messages/internal/msgjson"
 )
 
 type Message struct {

@@ -1,40 +1,30 @@
-# .github/workflows/lint.yml
-name: Lint
+name: Lint Services
 
 on:
-  pull_request:
   push:
-    branches: [main]
+    branches: [main, develop]
+  pull_request:
 
 jobs:
   golangci:
     runs-on: ubuntu-latest
+
     strategy:
-      fail-fast: false
       matrix:
-        module:
-          - services/auth
-          - services/gateway
-          - services/crypto-core
-          - services/keys
-          - services/messages
+        service: [auth, keys, messages, gateway]
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Show module
-        run: ls -la ${{ matrix.module }}
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
 
-      - name: Lint ${{ matrix.module }}
-        run: |
-          docker run --rm \
-            -v "$PWD":/repo \
-            -w /repo/${{ matrix.module }} \
-            golangci/golangci-lint:latest \
-            golangci-lint run --timeout=5m
-
-        # docker run --rm \
-        #     -v "$PWD/${{ matrix.module }}":/app \
-        #     -w /app \
-        #     golangci/golangci-lint:latest \
-        #     golangci-lint run --timeout=5m
+      - name: Run golangci-lint for ${{ matrix.service }}
+        uses: golangci/golangci-lint-action@v6
+        with:
+          # Pin linter version to prevent format rule drift
+          version: v1.60.3
+          args: -C services/${{ matrix.service }} ./... --timeout=5m
