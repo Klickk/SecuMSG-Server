@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"time"
+
 	"auth/internal/domain"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -45,7 +47,9 @@ func (cs *CredentialStore) GetPasswordByUserID(ctx context.Context, userID uuid.
 
 func onConflictUpdateAllExcept(except ...string) clause.OnConflict {
 	ex := map[string]struct{}{}
-	for _, e := range except { ex[e] = struct{}{} }
+	for _, e := range except {
+		ex[e] = struct{}{}
+	}
 	return clause.OnConflict{
 		UpdateAll: true,
 		DoUpdates: clause.Assignments(map[string]interface{}{}), // UpdateAll + Except handled by GORM

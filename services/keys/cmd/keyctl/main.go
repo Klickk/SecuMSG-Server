@@ -8,11 +8,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"keys/internal/dto"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"keys/internal/dto"
 
 	"github.com/google/uuid"
 )

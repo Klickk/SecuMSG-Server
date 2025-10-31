@@ -26,7 +26,7 @@ func (u *UserStore) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, er
 		if err == gorm.ErrRecordNotFound {
 			return nil, ErrRecordNotFound
 		}
-		
+
 		return nil, err
 	}
 	return &user, nil

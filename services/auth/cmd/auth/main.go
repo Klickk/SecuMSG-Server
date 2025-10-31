@@ -32,7 +32,7 @@ func main() {
 	// HS256 token service — signing key comes from env
 	ts := impl.NewTokenServiceHS256(impl.TokenConfig{
 		Issuer:     cfg.Issuer,
-		Audience:   cfg.Audience,     // allow override via env; fallback provided in config.Load()
+		Audience:   cfg.Audience, // allow override via env; fallback provided in config.Load()
 		AccessTTL:  cfg.AccessTTL,
 		RefreshTTL: cfg.RefreshTTL,
 		SigningKey: []byte(cfg.SigningKey),

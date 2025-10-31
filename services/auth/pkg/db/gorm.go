@@ -11,9 +11,9 @@ import (
 )
 
 type Config struct {
-	DSN             string // e.g. postgres://user:pass@localhost:5432/auth?sslmode=disable
-	LogSQL          bool
-	DisableFK       bool // set true if you manage FKs via SQL migrations
+	DSN       string // e.g. postgres://user:pass@localhost:5432/auth?sslmode=disable
+	LogSQL    bool
+	DisableFK bool // set true if you manage FKs via SQL migrations
 }
 
 func OpenGorm(cfg Config) (*gorm.DB, error) {

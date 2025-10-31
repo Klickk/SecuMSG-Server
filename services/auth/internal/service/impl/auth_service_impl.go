@@ -1,14 +1,15 @@
 package impl
 
 import (
-	"auth/internal/domain"
-	"auth/internal/dto"
-	"auth/internal/service"
-	"auth/internal/store"
 	"context"
 	"errors"
 	"strings"
 	"time"
+
+	"auth/internal/domain"
+	"auth/internal/dto"
+	"auth/internal/service"
+	"auth/internal/store"
 
 	"github.com/google/uuid"
 )
@@ -129,7 +130,6 @@ func (a *AuthServiceImpl) Register(ctx context.Context, r dto.RegisterRequest, i
 		}
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +204,6 @@ func (a *AuthServiceImpl) Login(ctx context.Context, r dto.LoginRequest, ip, ua 
 		tokens = tr
 		return nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
