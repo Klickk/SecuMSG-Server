@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "build:wasm": "GOOS=js GOARCH=wasm go build -C .. -o frontend/public/msgclient.wasm services/messages/cmd/msgwasm",
-    "prepare:wasm": "sh -c 'mkdir -p public && cp \"$(go env GOROOT)\"/misc/wasm/wasm_exec.js public/wasm_exec.js'",
+    "prepare:wasm": "sh -c 'set -eu; mkdir -p public; GO_WASM=\"$(go env GOROOT)/misc/wasm/wasm_exec.js\"; if [ ! -f \"$GO_WASM\" ]; then GO_WASM=\"$(go env GOROOT)/lib/wasm/wasm_exec.js\"; fi; cp \"$GO_WASM\" public/wasm_exec.js'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

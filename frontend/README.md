@@ -19,4 +19,7 @@ npm run dev
 
 The development server runs on http://localhost:5173 by default. Ensure the gateway/messaging stack is reachable from the browser and that CORS permits the origin.
 
+> [!NOTE]
+> The `prepare:wasm` script now works with both the historical `misc/wasm` and the current `lib/wasm` Go toolchain layouts so `wasm_exec.js` is copied automatically on newer Go releases.
+
 The application persists client state in `localStorage` under the key `secumsg-state-v1`. Use the **Reset state** button to clear stored credentials.
