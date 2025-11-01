@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { loadWasmClient, StateInfo, WasmClient } from '../lib/wasm';
 
 export interface RegistrationForm {
   keysUrl: string;
@@ -23,7 +22,33 @@ export interface MessageRecord {
   plaintext: string;
 }
 
+export interface StateInfo {
+  userId: string;
+  deviceId: string;
+  keysUrl: string;
+  messagesUrl: string;
+}
+
+interface ClientInitResponse {
+  state: string;
+  userId: string;
+  deviceId: string;
+  keysUrl: string;
+  messagesUrl: string;
+  oneTimePrekeys: number;
+}
+
+interface ClientSendResponse {
+  state: string;
+}
+
+interface ClientEnvelopeResponse {
+  state: string;
+  plaintext: string;
+}
+
 const STORAGE_KEY = 'secumsg-state-v1';
+const API_BASE_URL = (import.meta.env.VITE_CLIENT_API_URL as string | undefined) ?? 'http://localhost:8080';
 
 interface ListenerState {
   websocket?: WebSocket;
@@ -32,7 +57,6 @@ interface ListenerState {
 }
 
 export function useMessagingClient() {
-  const [client, setClient] = useState<WasmClient | null>(null);
   const [state, setState] = useState<string | null>(null);
   const [info, setInfo] = useState<StateInfo | null>(null);
   const [messages, setMessages] = useState<MessageRecord[]>([]);
@@ -40,69 +64,37 @@ export function useMessagingClient() {
   const stateRef = useRef<string | null>(null);
 
   useEffect(() => {
-    let mounted = true;
-    loadWasmClient()
-      .then((loaded) => {
-        if (mounted) {
-          setClient(loaded);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load wasm client', err);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       setState(saved);
       stateRef.current = saved;
+      setInfo(extractStateInfo(saved));
     }
   }, []);
 
-  useEffect(() => {
-    if (client && state) {
-      const infoValue = client.stateInfo(state);
-      setInfo(infoValue ?? null);
-    } else {
-      setInfo(null);
-    }
-  }, [client, state]);
+  const ready = useMemo(() => true, []);
 
-  const ready = useMemo(() => Boolean(client), [client]);
-
-  const persistState = useCallback(
-    (value: string) => {
-      stateRef.current = value;
-      setState(value);
-      localStorage.setItem(STORAGE_KEY, value);
-      if (client) {
-        const infoValue = client.stateInfo(value);
-        setInfo(infoValue ?? null);
-      }
-    },
-    [client]
-  );
+  const persistState = useCallback((value: string) => {
+    stateRef.current = value;
+    setState(value);
+    localStorage.setItem(STORAGE_KEY, value);
+    setInfo(extractStateInfo(value));
+  }, []);
 
   const register = useCallback(
     async (form: RegistrationForm) => {
-      if (!client) {
-        throw new Error('WASM client not ready');
-      }
-      const result = await client.init({
-        keysURL: form.keysUrl.trim(),
-        messagesURL: form.messagesUrl.trim(),
-        userID: form.userId?.trim(),
-        deviceID: form.deviceId?.trim()
-      });
+      const payload = {
+        keysUrl: form.keysUrl.trim(),
+        messagesUrl: form.messagesUrl.trim(),
+        userId: form.userId?.trim(),
+        deviceId: form.deviceId?.trim()
+      };
+      const result = await postJSON<ClientInitResponse>('/client/init', payload);
       persistState(result.state);
       setMessages([]);
       return result;
     },
-    [client, persistState]
+    [persistState]
   );
 
   const reset = useCallback(() => {
@@ -119,37 +111,22 @@ export function useMessagingClient() {
 
   const sendMessage = useCallback(
     async (form: SendForm) => {
-      if (!client) {
-        throw new Error('WASM client not ready');
-      }
-      if (!stateRef.current || !info) {
+      if (!stateRef.current) {
         throw new Error('Device is not initialized');
       }
-      const prepared = await client.prepareSend({
+      const payload = {
         state: stateRef.current,
         convId: form.convId.trim(),
         toDeviceId: form.toDeviceId.trim(),
         plaintext: form.message
-      });
-      const target = new URL('/messages/send', info.messagesUrl);
-      const response = await fetch(target.toString(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(prepared.request)
-      });
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || 'Failed to send message');
-      }
-      persistState(prepared.state);
+      };
+      const result = await postJSON<ClientSendResponse>('/client/send', payload);
+      persistState(result.state);
     },
-    [client, info, persistState]
+    [persistState]
   );
 
   const connect = useCallback(() => {
-    if (!client) {
-      throw new Error('WASM client not ready');
-    }
     if (!stateRef.current || !info) {
       throw new Error('Device is not initialized');
     }
@@ -173,7 +150,7 @@ export function useMessagingClient() {
     };
 
     ws.onmessage = async (event) => {
-      if (!client || !stateRef.current) {
+      if (!stateRef.current) {
         return;
       }
       try {
@@ -181,23 +158,26 @@ export function useMessagingClient() {
         if (!text) {
           return;
         }
-        const envelope = JSON.parse(text) as MessageRecord;
-        const handled = await client.handleEnvelope({ state: stateRef.current, envelope: text });
-        persistState(handled.state);
-        const next: MessageRecord = {
+        const envelope = JSON.parse(text) as InboundEnvelope;
+        const response = await postJSON<ClientEnvelopeResponse>('/client/envelope', {
+          state: stateRef.current,
+          envelope
+        });
+        persistState(response.state);
+        const record: MessageRecord = {
           id: envelope.id,
-          convId: envelope.convId,
-          fromDeviceId: envelope.fromDeviceId,
-          toDeviceId: envelope.toDeviceId,
-          sentAt: envelope.sentAt,
-          plaintext: handled.plaintext
+          convId: envelope.conv_id,
+          fromDeviceId: envelope.from_device_id,
+          toDeviceId: envelope.to_device_id,
+          sentAt: envelope.sent_at,
+          plaintext: response.plaintext
         };
-        setMessages((prev) => [next, ...prev]);
+        setMessages((prev) => [record, ...prev]);
       } catch (err) {
         console.error('Failed to process inbound message', err);
       }
     };
-  }, [client, info, listener.status, listener.websocket, persistState]);
+  }, [info, listener.status, listener.websocket, persistState]);
 
   const disconnect = useCallback(() => {
     if (listener.websocket) {
@@ -220,10 +200,57 @@ export function useMessagingClient() {
   };
 }
 
+interface InboundEnvelope {
+  id: string;
+  conv_id: string;
+  from_device_id: string;
+  to_device_id: string;
+  ciphertext: string;
+  header: unknown;
+  sent_at: string;
+}
+
 function buildWsUrl(baseUrl: string, deviceId: string): string {
   const url = new URL(baseUrl);
   url.pathname = url.pathname.replace(/\/?$/, '/ws');
   url.searchParams.set('device_id', deviceId);
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
+}
+
+function extractStateInfo(stateJSON: string): StateInfo | null {
+  try {
+    const raw = JSON.parse(stateJSON) as {
+      user_id?: string;
+      device_id?: string;
+      keys_base_url?: string;
+      messages_base_url?: string;
+    };
+    if (!raw || !raw.device_id || !raw.user_id || !raw.messages_base_url || !raw.keys_base_url) {
+      return null;
+    }
+    return {
+      userId: raw.user_id,
+      deviceId: raw.device_id,
+      keysUrl: raw.keys_base_url,
+      messagesUrl: raw.messages_base_url
+    };
+  } catch (err) {
+    console.error('Failed to parse state info', err);
+    return null;
+  }
+}
+
+async function postJSON<T>(path: string, body: unknown): Promise<T> {
+  const target = new URL(path, API_BASE_URL);
+  const response = await fetch(target.toString(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || 'Request failed');
+  }
+  return (await response.json()) as T;
 }

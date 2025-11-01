@@ -69,6 +69,9 @@ func NewRouter(svc *service.Service, poll time.Duration, batch int) http.Handler
 	})
 	mux.HandleFunc("/messages/send", h.handleSend)
 	mux.HandleFunc("/ws", h.handleWS)
+	mux.HandleFunc("/client/init", h.handleClientInit)
+	mux.HandleFunc("/client/send", h.handleClientSend)
+	mux.HandleFunc("/client/envelope", h.handleClientEnvelope)
 	return mux
 }
 
