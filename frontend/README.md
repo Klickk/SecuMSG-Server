@@ -1,12 +1,11 @@
 # SecuMSG Frontend
 
-This React application provides a browser UI for the SecuMSG messaging stack. It talks to the backend through the `/client/*` HTT
-P helpers that wrap the existing Go `msgctl` logic on the server, so no WebAssembly build steps are required in the browser.
+This React application provides a browser UI for the SecuMSG messaging stack. The browser loads the Go `msgclient` library as a WebAssembly module so all key generation, encryption, and decryption happens locally in the client.
 
 ## Prerequisites
 
 - Node.js 18+
-- A running deployment of the key and messaging services that exposes the `/client/*` endpoints (part of the messages service).
+- A running deployment of the key and messaging services that the browser can reach
 
 ## Setup
 
@@ -16,14 +15,10 @@ npm install
 npm run dev
 ```
 
-Set the `VITE_CLIENT_API_URL` environment variable if the helper endpoints are not available on `http://localhost:8080`:
+The `predev` and `prebuild` scripts automatically compile the WebAssembly module and copy the matching `wasm_exec.js` shim into `frontend/public`. If you need to refresh the module manually (for example after editing the Go sources) run:
 
 ```bash
-VITE_CLIENT_API_URL="http://runner-host:8080" npm run dev
+npm run prepare:wasm
 ```
 
-The development server runs on http://localhost:5173 by default. Ensure the key and messaging services are reachable from the bro
-wser and that CORS permits the origin.
-
-The application persists client state in `localStorage` under the key `secumsg-state-v1`. Use the **Reset state** button to clear
-stored credentials.
+The development server runs on http://localhost:5173 by default. Ensure the key and messaging services are reachable from the browser and that CORS permits the origin. The application persists client state in `localStorage` under the key `secumsg-state-v1`. Use the **Reset state** button to clear stored credentials.

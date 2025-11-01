@@ -11,6 +11,7 @@ function App() {
     ready,
     state,
     info,
+    engineError,
     messages,
     listener,
     register,
@@ -40,7 +41,9 @@ function App() {
     try {
       setRegistering(true);
       const result = await register(registerForm);
-      setFeedback(`Device registered. User ${result.userId}, device ${result.deviceId}.`);
+      setFeedback(
+        `Device registered. User ${result.userId}, device ${result.deviceId}. Remaining one-time pre-keys: ${result.oneTimePrekeys}.`
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -86,6 +89,10 @@ function App() {
       </header>
 
       <main className="content">
+        {!ready && !engineError && <p className="muted">Loading encryption engine…</p>}
+        {engineError && (
+          <p className="error">Failed to load encryption engine: {engineError}</p>
+        )}
         <section className="card">
           <h2>Device Registration</h2>
           <form onSubmit={handleRegister} className="form">
@@ -245,7 +252,6 @@ function App() {
       <footer className="footer">
         {feedback && <p className="feedback">{feedback}</p>}
         {error && <p className="error">{error}</p>}
-        {!ready && <p className="muted">Loading WebAssembly runtime…</p>}
       </footer>
     </div>
   );

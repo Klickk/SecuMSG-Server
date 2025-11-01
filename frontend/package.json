@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare:wasm": "node scripts/prepare-wasm.mjs",
+    "predev": "npm run prepare:wasm",
+    "prebuild": "npm run prepare:wasm",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",

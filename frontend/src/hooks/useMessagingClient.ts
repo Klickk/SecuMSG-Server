@@ -1,10 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { loadWasmClient, WasmClient, WasmStateInfo } from '../lib/wasmClient';
 
 export interface RegistrationForm {
   keysUrl: string;
   messagesUrl: string;
   userId?: string;
   deviceId?: string;
+}
+
+export interface RegistrationResult {
+  state: string;
+  userId: string;
+  deviceId: string;
+  keysUrl: string;
+  messagesUrl: string;
+  oneTimePrekeys: number;
 }
 
 export interface SendForm {
@@ -29,26 +39,7 @@ export interface StateInfo {
   messagesUrl: string;
 }
 
-interface ClientInitResponse {
-  state: string;
-  userId: string;
-  deviceId: string;
-  keysUrl: string;
-  messagesUrl: string;
-  oneTimePrekeys: number;
-}
-
-interface ClientSendResponse {
-  state: string;
-}
-
-interface ClientEnvelopeResponse {
-  state: string;
-  plaintext: string;
-}
-
 const STORAGE_KEY = 'secumsg-state-v1';
-const API_BASE_URL = (import.meta.env.VITE_CLIENT_API_URL as string | undefined) ?? 'http://localhost:8080';
 
 interface ListenerState {
   websocket?: WebSocket;
@@ -61,7 +52,10 @@ export function useMessagingClient() {
   const [info, setInfo] = useState<StateInfo | null>(null);
   const [messages, setMessages] = useState<MessageRecord[]>([]);
   const [listener, setListener] = useState<ListenerState>({ status: 'idle' });
+  const [ready, setReady] = useState(false);
+  const [engineError, setEngineError] = useState<string | null>(null);
   const stateRef = useRef<string | null>(null);
+  const clientRef = useRef<WasmClient | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -72,27 +66,80 @@ export function useMessagingClient() {
     }
   }, []);
 
-  const ready = useMemo(() => true, []);
+  useEffect(() => {
+    let cancelled = false;
+    loadWasmClient()
+      .then((client) => {
+        if (cancelled) {
+          return;
+        }
+        clientRef.current = client;
+        setReady(true);
+        setEngineError(null);
+        if (stateRef.current) {
+          const currentInfo = client.stateInfo(stateRef.current);
+          if (currentInfo) {
+            setInfo(currentInfo);
+          }
+        }
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+        console.error('Failed to load wasm client', err);
+        setEngineError(err instanceof Error ? err.message : String(err));
+        setReady(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const persistState = useCallback((value: string) => {
-    stateRef.current = value;
-    setState(value);
-    localStorage.setItem(STORAGE_KEY, value);
+  const updateInfo = useCallback((value: string) => {
+    const client = clientRef.current;
+    if (client) {
+      const snapshot = client.stateInfo(value);
+      if (snapshot) {
+        setInfo(snapshot);
+        return;
+      }
+    }
     setInfo(extractStateInfo(value));
   }, []);
 
+  const persistState = useCallback(
+    (value: string) => {
+      stateRef.current = value;
+      setState(value);
+      localStorage.setItem(STORAGE_KEY, value);
+      updateInfo(value);
+    },
+    [updateInfo]
+  );
+
   const register = useCallback(
-    async (form: RegistrationForm) => {
+    async (form: RegistrationForm): Promise<RegistrationResult> => {
+      if (!clientRef.current) {
+        throw new Error('Encryption engine is still loading');
+      }
       const payload = {
         keysUrl: form.keysUrl.trim(),
         messagesUrl: form.messagesUrl.trim(),
         userId: form.userId?.trim(),
         deviceId: form.deviceId?.trim()
       };
-      const result = await postJSON<ClientInitResponse>('/client/init', payload);
+      const result = await clientRef.current.init(payload);
       persistState(result.state);
       setMessages([]);
-      return result;
+      return {
+        state: result.state,
+        userId: result.userId,
+        deviceId: result.deviceId,
+        keysUrl: result.keysUrl,
+        messagesUrl: result.messagesUrl,
+        oneTimePrekeys: result.oneTimePrekeys
+      };
     },
     [persistState]
   );
@@ -111,19 +158,22 @@ export function useMessagingClient() {
 
   const sendMessage = useCallback(
     async (form: SendForm) => {
-      if (!stateRef.current) {
+      if (!stateRef.current || !info) {
         throw new Error('Device is not initialized');
       }
-      const payload = {
+      if (!clientRef.current) {
+        throw new Error('Encryption engine is still loading');
+      }
+      const result = await clientRef.current.prepareSend({
         state: stateRef.current,
         convId: form.convId.trim(),
         toDeviceId: form.toDeviceId.trim(),
         plaintext: form.message
-      };
-      const result = await postJSON<ClientSendResponse>('/client/send', payload);
+      });
+      await postEncryptedMessage(info.messagesUrl, result.request);
       persistState(result.state);
     },
-    [persistState]
+    [info, persistState]
   );
 
   const connect = useCallback(() => {
@@ -150,7 +200,7 @@ export function useMessagingClient() {
     };
 
     ws.onmessage = async (event) => {
-      if (!stateRef.current) {
+      if (!stateRef.current || !clientRef.current) {
         return;
       }
       try {
@@ -159,7 +209,7 @@ export function useMessagingClient() {
           return;
         }
         const envelope = JSON.parse(text) as InboundEnvelope;
-        const response = await postJSON<ClientEnvelopeResponse>('/client/envelope', {
+        const response = await clientRef.current.handleEnvelope({
           state: stateRef.current,
           envelope
         });
@@ -186,8 +236,11 @@ export function useMessagingClient() {
     setListener({ status: 'idle' });
   }, [listener.websocket]);
 
+  const engineReady = useMemo(() => ready && engineError == null, [ready, engineError]);
+
   return {
-    ready,
+    ready: engineReady,
+    engineError,
     state,
     info,
     messages,
@@ -220,12 +273,20 @@ function buildWsUrl(baseUrl: string, deviceId: string): string {
 
 function extractStateInfo(stateJSON: string): StateInfo | null {
   try {
-    const raw = JSON.parse(stateJSON) as {
+    const raw = JSON.parse(stateJSON) as WasmStateInfo & {
       user_id?: string;
       device_id?: string;
       keys_base_url?: string;
       messages_base_url?: string;
     };
+    if ('userId' in raw && raw.userId && 'deviceId' in raw && raw.deviceId) {
+      return {
+        userId: raw.userId,
+        deviceId: raw.deviceId,
+        keysUrl: raw.keysUrl,
+        messagesUrl: raw.messagesUrl
+      };
+    }
     if (!raw || !raw.device_id || !raw.user_id || !raw.messages_base_url || !raw.keys_base_url) {
       return null;
     }
@@ -241,16 +302,20 @@ function extractStateInfo(stateJSON: string): StateInfo | null {
   }
 }
 
-async function postJSON<T>(path: string, body: unknown): Promise<T> {
-  const target = new URL(path, API_BASE_URL);
-  const response = await fetch(target.toString(), {
+async function postEncryptedMessage(baseUrl: string, body: Record<string, unknown>): Promise<void> {
+  const target = joinUrl(baseUrl, '/messages/send');
+  const response = await fetch(target, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || 'Request failed');
+    throw new Error(text || 'Failed to send message');
   }
-  return (await response.json()) as T;
+}
+
+function joinUrl(base: string, path: string): string {
+  const normalized = base.trim().replace(/\/+$/, '');
+  return `${normalized}${path}`;
 }

@@ -45,9 +45,12 @@ func initDevice(this js.Value, args []js.Value) any {
 			return
 		}
 		out := map[string]any{
-			"state":    string(data),
-			"userId":   resp.UserID,
-			"deviceId": resp.DeviceID,
+			"state":          string(data),
+			"userId":         resp.UserID,
+			"deviceId":       resp.DeviceID,
+			"keysUrl":        state.KeysBaseURL(),
+			"messagesUrl":    state.MessagesBaseURL(),
+			"oneTimePrekeys": resp.OneTimePreKeys,
 		}
 		resolve.Invoke(js.ValueOf(out))
 	})
