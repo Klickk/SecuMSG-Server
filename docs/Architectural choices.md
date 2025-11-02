@@ -1,6 +1,6 @@
 # Architectural Choices
 
-Project: E2EE Messaging Platform  
+> Project: E2EE Messaging Platform  
 Date: 2025-11-02  
 Scope: Captures the key architecture decisions made so far, including motivation, alternatives considered, and consequences.
 ---
@@ -100,10 +100,12 @@ Use short-lived **JWT access tokens** and long-lived **refresh tokens** bound to
 - **PostgreSQL** as the primary relational datastore.  
 - **Object storage** (S3/MinIO) for encrypted files.  
 - **GORM** currently used for rapid development; may evolve to `sqlc` for stricter control where helpful.
+- **One DB per service** every service has its own database.
 
 **Motivation**  
 - Postgres provides strong consistency, rich types (e.g., `inet`) and indexing.  
 - S3/MinIO standardizes file storage and scales separately from the DB.
+- No need for any service to get data from another, makes it easy to track all the data.
 
 **Consequences**  
 - DB migrations managed via a migrations container in Compose (dev/prod).  
@@ -119,7 +121,7 @@ Use short-lived **JWT access tokens** and long-lived **refresh tokens** bound to
 **Decision**  
 - **HTTP/REST** for management endpoints (auth, configuration).  
 - **WebSockets** for real-time messaging fanout.  
-- **Event bus (NATS)** for decoupled domain events and cross-service notifications.
+- **Event bus (NATS)(Planned)** for decoupled domain events and cross-service notifications.
 
 **Motivation**  
 - REST remains the simplest integration surface.  
@@ -197,11 +199,11 @@ Use **GitHub Actions** for linting, CI, image builds, and deploy to a **self-hos
 - Healthchecks in Compose for basic readiness/liveness.
 
 **Planned**  
-- Centralized logs (e.g., Loki/ELK) and metrics/traces (OpenTelemetry).  
+- Centralized logs and monitoring with NATS & Grafana .  
 - Request IDs and correlation across gateway → services → event bus.
 
 **Consequences**  
-- Current setup adequate for early stages; observability will be expanded as features land.
+- Current setup adequate for early stages; observability will be expanded as project evolves.
 
 ---
 
@@ -228,17 +230,6 @@ Use **GitHub Actions** for linting, CI, image builds, and deploy to a **self-hos
 - **Key/secret handling mistakes:** Centralized via Actions Secrets; add secret scanning later.  
 - **Vendor lock-in (object storage):** Using S3 API allows switching providers.  
 - **Schema evolution:** Migrations container and versioned SQL; plan for zero-downtime patterns.
-
----
-
-## 13) Open Decisions / Next ADRs
-
-- **E2EE protocol specifics** (Double Ratchet, X3DH, sender keys for groups).  
-- **Message envelope schema** (ordering, idempotency, replay protection).  
-- **ORM direction** (continue GORM vs. adopt `sqlc` for stricter compile-time checks).  
-- **Event bus choice** (NATS config vs. Kafka if durability/ordering needs grow).  
-- **Kubernetes** (when to migrate beyond Compose; ingress, secrets, autoscaling).  
-- **Observability stack** (OpenTelemetry collector, log aggregation choice).
 
 ---
 

@@ -203,6 +203,11 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 ```
 ---
 
+## 9) Database Initialization
+
+Since each service has its own db & migartions, they need to be created before the migrations run. In the `infra/` folder, there is the `create_dbs.sh` script, which does exactly that, by running docker exec commands on the container. It also dempotently checks for database existence before creating it, allowing safe re-runs. This ensures that when services are brought up via `docker-compose.dev.yml` or during migrations in CI, each microservice has its corresponding database ready without manual intervention.
+
+
 ## 9) File Inventory (Quick Reference)
 
 - `lint.yml` — lints Go modules via `golangci-lint` (Docker)
