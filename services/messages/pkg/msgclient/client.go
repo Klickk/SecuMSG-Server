@@ -153,9 +153,7 @@ func RunCLI(prog string, args []string, stderr io.Writer) error {
 		if stderr == nil {
 			stderr = os.Stderr
 		}
-		if _, werr := fmt.Fprintf(stderr, "error: %v\n", err); werr != nil {
-			// ignore write error
-		}
+		_, _ = fmt.Fprintf(stderr, "error: %v\n", err)
 	}
 	return err
 }
