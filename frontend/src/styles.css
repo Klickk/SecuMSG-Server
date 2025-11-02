@@ -1,7 +1,9 @@
 :root {
   color-scheme: light dark;
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
   background: #f5f5f5;
+  text-rendering: optimizeLegibility;
   color: #1d1d1f;
 }
 
@@ -46,6 +48,7 @@ body {
 
 .form {
   display: flex;
+  color: #1d1d1f !important;
   flex-direction: column;
   gap: 1rem;
 }
@@ -70,6 +73,7 @@ label {
 input,
 textarea {
   border: 1px solid #cbd5f5;
+  color: #1d1d1f !important;
   border-radius: 10px;
   padding: 0.65rem 0.8rem;
   background: rgba(249, 250, 255, 0.85);
@@ -145,7 +149,7 @@ button:disabled {
 }
 
 .message-text {
-  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-family: "SF Mono", "Fira Code", monospace;
   white-space: pre-wrap;
 }
 
@@ -179,6 +183,9 @@ button {
   cursor: pointer;
 }
 
-input, button, textarea, select {
+input,
+button,
+textarea,
+select {
   font: inherit;
 }

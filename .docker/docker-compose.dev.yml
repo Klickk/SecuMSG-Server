@@ -10,7 +10,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - type: bind
-        source: ${COMPOSE_PROJECT_DIR:-.}/infra/dev/db-init
+        source: ../infra/dev/db-init
         target: /docker-entrypoint-initdb.d
         read_only: true
 

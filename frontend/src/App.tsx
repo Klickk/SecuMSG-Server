@@ -1,10 +1,10 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useState } from "react";
 import {
   useMessagingClient,
   RegistrationForm,
   SendForm,
-  MessageRecord
-} from './hooks/useMessagingClient';
+  MessageRecord,
+} from "./hooks/useMessagingClient";
 
 function App() {
   const {
@@ -18,16 +18,16 @@ function App() {
     reset,
     sendMessage,
     connect,
-    disconnect
+    disconnect,
   } = useMessagingClient();
   const [registerForm, setRegisterForm] = useState<RegistrationForm>({
-    keysUrl: 'http://localhost:8080',
-    messagesUrl: 'http://localhost:8080'
+    keysUrl: "http://localhost:8080",
+    messagesUrl: "http://localhost:8080",
   });
   const [sendForm, setSendForm] = useState<SendForm>({
-    convId: '',
-    toDeviceId: '',
-    message: ''
+    convId: "",
+    toDeviceId: "",
+    message: "",
   });
   const [feedback, setFeedback] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,8 +58,8 @@ function App() {
     try {
       setSending(true);
       await sendMessage(sendForm);
-      setFeedback('Message queued successfully.');
-      setSendForm((prev) => ({ ...prev, message: '' }));
+      setFeedback("Message queued successfully.");
+      setSendForm((prev) => ({ ...prev, message: "" }));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -68,7 +68,7 @@ function App() {
   };
 
   const handleConnectToggle = () => {
-    if (listener.status === 'connected' || listener.status === 'connecting') {
+    if (listener.status === "connected" || listener.status === "connecting") {
       disconnect();
     } else {
       try {
@@ -85,13 +85,16 @@ function App() {
     <div className="app">
       <header className="header">
         <h1>SecuMSG Messenger</h1>
-        <p>Interact with the messaging service using your browser.</p>
       </header>
 
       <main className="content">
-        {!ready && !engineError && <p className="muted">Loading encryption engine…</p>}
+        {!ready && !engineError && (
+          <p className="muted">Loading encryption engine…</p>
+        )}
         {engineError && (
-          <p className="error">Failed to load encryption engine: {engineError}</p>
+          <p className="error">
+            Failed to load encryption engine: {engineError}
+          </p>
         )}
         <section className="card">
           <h2>Device Registration</h2>
@@ -102,7 +105,10 @@ function App() {
                 type="url"
                 value={registerForm.keysUrl}
                 onChange={(evt) =>
-                  setRegisterForm((prev) => ({ ...prev, keysUrl: evt.target.value }))
+                  setRegisterForm((prev) => ({
+                    ...prev,
+                    keysUrl: evt.target.value,
+                  }))
                 }
                 required
               />
@@ -113,7 +119,10 @@ function App() {
                 type="url"
                 value={registerForm.messagesUrl}
                 onChange={(evt) =>
-                  setRegisterForm((prev) => ({ ...prev, messagesUrl: evt.target.value }))
+                  setRegisterForm((prev) => ({
+                    ...prev,
+                    messagesUrl: evt.target.value,
+                  }))
                 }
                 required
               />
@@ -122,25 +131,31 @@ function App() {
               <label>
                 User ID (optional)
                 <input
-                  value={registerForm.userId ?? ''}
+                  value={registerForm.userId ?? ""}
                   onChange={(evt) =>
-                    setRegisterForm((prev) => ({ ...prev, userId: evt.target.value }))
+                    setRegisterForm((prev) => ({
+                      ...prev,
+                      userId: evt.target.value,
+                    }))
                   }
                 />
               </label>
               <label>
                 Device ID (optional)
                 <input
-                  value={registerForm.deviceId ?? ''}
+                  value={registerForm.deviceId ?? ""}
                   onChange={(evt) =>
-                    setRegisterForm((prev) => ({ ...prev, deviceId: evt.target.value }))
+                    setRegisterForm((prev) => ({
+                      ...prev,
+                      deviceId: evt.target.value,
+                    }))
                   }
                 />
               </label>
             </div>
             <div className="actions">
               <button type="submit" disabled={!ready || registering}>
-                {registering ? 'Registering…' : 'Register device'}
+                {registering ? "Registering…" : "Register device"}
               </button>
               <button type="button" onClick={reset} disabled={!state}>
                 Reset state
@@ -175,12 +190,16 @@ function App() {
         <section className="card">
           <h2>Messaging</h2>
           <div className="actions">
-            <button type="button" onClick={handleConnectToggle} disabled={!state || !ready}>
-              {listener.status === 'connected'
-                ? 'Disconnect'
-                : listener.status === 'connecting'
-                ? 'Connecting…'
-                : 'Connect & listen'}
+            <button
+              type="button"
+              onClick={handleConnectToggle}
+              disabled={!state || !ready}
+            >
+              {listener.status === "connected"
+                ? "Disconnect"
+                : listener.status === "connecting"
+                ? "Connecting…"
+                : "Connect & listen"}
             </button>
             {listener.error && <span className="error">{listener.error}</span>}
           </div>
@@ -189,7 +208,9 @@ function App() {
               Conversation ID
               <input
                 value={sendForm.convId}
-                onChange={(evt) => setSendForm((prev) => ({ ...prev, convId: evt.target.value }))}
+                onChange={(evt) =>
+                  setSendForm((prev) => ({ ...prev, convId: evt.target.value }))
+                }
                 placeholder="Conversation UUID"
                 required
                 disabled={!canSend}
@@ -200,7 +221,10 @@ function App() {
               <input
                 value={sendForm.toDeviceId}
                 onChange={(evt) =>
-                  setSendForm((prev) => ({ ...prev, toDeviceId: evt.target.value }))
+                  setSendForm((prev) => ({
+                    ...prev,
+                    toDeviceId: evt.target.value,
+                  }))
                 }
                 placeholder="Device UUID"
                 required
@@ -211,7 +235,12 @@ function App() {
               Message
               <textarea
                 value={sendForm.message}
-                onChange={(evt) => setSendForm((prev) => ({ ...prev, message: evt.target.value }))}
+                onChange={(evt) =>
+                  setSendForm((prev) => ({
+                    ...prev,
+                    message: evt.target.value,
+                  }))
+                }
                 rows={4}
                 required
                 disabled={!canSend}
@@ -219,7 +248,7 @@ function App() {
             </label>
             <div className="actions">
               <button type="submit" disabled={!canSend || sending}>
-                {sending ? 'Sending…' : 'Send message'}
+                {sending ? "Sending…" : "Send message"}
               </button>
             </div>
           </form>

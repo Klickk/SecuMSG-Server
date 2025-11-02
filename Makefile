@@ -1,4 +1,4 @@
-compose := docker compose --project-directory . -f .docker/docker-compose.dev.yml
+compose := docker compose -f .docker/docker-compose.dev.yml
 
 up:
 	$(compose) up --build -d
