@@ -15,7 +15,13 @@ migrate-up:
 		-path=/migrations -database 'postgres://app:secret@postgres:5432/authdb?sslmode=disable' up
 	$(compose) run --rm migrate-keys \
 		-path=/migrations -database 'postgres://app:secret@postgres:5432/keysdb?sslmode=disable' up
+	$(compose) run --rm migrate-messages \
+		-path=/migrations -database 'postgres://app:secret@postgres:5432/messagesdb?sslmode=disable' up
 
 migrate-down:
 	$(compose) run --rm migrate-auth \
 		-path=/migrations -database 'postgres://app:secret@postgres:5432/authdb?sslmode=disable' down 1
+	$(compose) run --rm migrate-keys \
+		-path=/migrations -database 'postgres://app:secret@postgres:5432/keysdb?sslmode=disable' down 1
+	$(compose) run --rm migrate-messages \
+		-path=/migrations -database 'postgres://app:secret@postgres:5432/messagesdb?sslmode=disable' down 1

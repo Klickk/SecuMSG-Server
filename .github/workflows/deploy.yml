@@ -58,15 +58,15 @@ jobs:
 
       - name: Pull & start stack
         run: |
-          docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod pull
-          docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod up -d
+          docker compose --project-directory . -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod pull
+          docker compose --project-directory . -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod up -d
 
       # If anything fails above, dump logs
       - name: Dump compose state on failure
         if: failure()
         run: |
-          docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod ps
-          docker compose -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod logs --no-color --tail=200 || true
+          docker compose --project-directory . -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod ps
+          docker compose --project-directory . -f .docker/docker-compose.prod.yml --env-file .docker/.env.prod logs --no-color --tail=200 || true
       
       - name: Show running containers
         run: docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'

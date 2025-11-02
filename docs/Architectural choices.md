@@ -1,7 +1,7 @@
 # Architectural Choices
 
 Project: E2EE Messaging Platform  
-Date: 2025-10-05  
+Date: 2025-11-02  
 Scope: Captures the key architecture decisions made so far, including motivation, alternatives considered, and consequences.
 ---
 
@@ -13,9 +13,9 @@ Use a small set of Go microservices fronted by an API Gateway.
 **Services (current & planned)**  
 - **Gateway:** HTTP/WS entry point, CORS, auth delegation, routing.  
 - **Auth:** Registration, login, JWT issuance/refresh, session management.  
-- **Messaging (planned):** Rooms, message envelopes, WS fanout, delivery receipts.  
+- **Messaging:** Rooms, message envelopes, WS fanout, delivery receipts.  
 - **File (planned):** Encrypted file ingest/retrieval to S3-compatible storage.  
-- **Event Bus:** NATS (or compatible) for domain events and decoupling.
+- **Event Bus(planned):** NATS (or compatible) for domain events and decoupling.
 
 **Motivation**  
 - Clear separation of concerns (security, messaging, storage).  
@@ -253,5 +253,3 @@ Use **GitHub Actions** for linting, CI, image builds, and deploy to a **self-hos
 - **Event Bus**: domain events (user registered, session created/revoked, message stored).
 
 ---
-
-**Status:** Accepted for the current iteration. This document will be refined into individual ADRs as features are implemented.

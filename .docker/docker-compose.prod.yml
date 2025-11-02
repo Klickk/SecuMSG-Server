@@ -9,7 +9,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - type: bind
-        source: ../infra/dev/db-init
+        source: ${COMPOSE_PROJECT_DIR:-.}/infra/dev/db-init
         target: /docker-entrypoint-initdb.d
         read_only: true
     networks: [appnet]
@@ -54,6 +54,23 @@ services:
       ]
     restart: "no"
 
+  migrate-messages:
+    image: ${REGISTRY}/${OWNER}/${REPO}/messages-migrations:${TAG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [appnet]
+    command:
+      [
+        "-verbose",
+        "-source",
+        "file:///migrations",
+        "-database",
+        "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/messagesdb?sslmode=disable",
+        "up",
+      ]
+    restart: "no"
+
   auth:
     image: ${REGISTRY}/${OWNER}/${REPO}/auth:${TAG}
     depends_on:
@@ -91,6 +108,7 @@ services:
     image: ${REGISTRY}/${OWNER}/${REPO}/messages:${TAG}
     depends_on:
       - postgres
+      - migrate-messages
     networks: [appnet]
     environment:
       MESSAGES_DATABASE_URL: "postgres://app:${POSTGRES_PASSWORD}@postgres:5432/messagesdb?sslmode=disable"
