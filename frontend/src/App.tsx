@@ -42,7 +42,8 @@ function App() {
       setRegistering(true);
       const result = await register(registerForm);
       setFeedback(
-        `Device registered. User ${result.userId}, device ${result.deviceId}. Remaining one-time pre-keys: ${result.oneTimePrekeys}.`
+        `Device registered. User ${result.userId}, device ${result.deviceId}.`
+        //Remaining one-time pre-keys: ${result.oneTimePrekeys}.
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
