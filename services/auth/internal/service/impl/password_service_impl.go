@@ -18,7 +18,7 @@ type Argon2Params struct {
 }
 
 type PasswordServiceImpl struct {
-	currentVer int          // bump when you change policy
+	currentVer int          
 	cur        Argon2Params // current policy used for new hashes
 	algoName   string       // "argon2id"
 }
