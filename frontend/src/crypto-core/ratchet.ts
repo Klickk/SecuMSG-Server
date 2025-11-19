@@ -1,5 +1,4 @@
 import { ChaCha20Poly1305 } from "@stablelib/chacha20poly1305";
-import { curve25519 } from "@noble/curves/curve25519";
 import { hkdf } from "@noble/hashes/hkdf";
 import { sha256 } from "@noble/hashes/sha256";
 import { hmac } from "@noble/hashes/hmac";
@@ -9,8 +8,9 @@ import {
   ErrDuplicateMessage,
   ErrInvalidRemoteKey,
 } from "./errors";
-import type { MessageHeader, SessionState } from "./types";
+import { MessageHeader, SessionState } from "./types";
 import { copyBytes, equalsBytes, zeroBytes, utf8 } from "./utils";
+import { x25519 } from "@noble/curves/ed25519";
 
 const hkdfInfoRatchet = "SecuMSG-DR";
 const hkdfInfoAEAD = "SecuMSG-AEAD";
@@ -86,7 +86,7 @@ export function RotateRatchetOnSend(session: SessionState, _header?: MessageHead
     throw ErrInvalidRemoteKey;
   }
   const kp = generateX25519KeyPair();
-  const dh = curve25519.scalarMult(kp.Private, session.RemoteRatchet);
+  const dh = x25519.scalarMult(kp.Private, session.RemoteRatchet);
   const { root, chain } = kdfRoot(session.RootKey, dh);
   session.RootKey = root;
   session.PN = session.SendChain.Index;
@@ -105,7 +105,7 @@ export function RotateRatchetOnRecv(session: SessionState, header: MessageHeader
   if (equalsBytes(header.DHPublic, session.RemoteRatchet)) {
     return;
   }
-  const dh = curve25519.scalarMult(session.RatchetPrivate, header.DHPublic);
+  const dh = x25519.scalarMult(session.RatchetPrivate, header.DHPublic);
   const { root, chain } = kdfRoot(session.RootKey, dh);
   session.RootKey = root;
   session.RemoteRatchet = copyBytes(header.DHPublic);

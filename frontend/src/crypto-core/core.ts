@@ -1,13 +1,19 @@
-import { ed25519 } from "@noble/curves/ed25519";
-import { curve25519 } from "@noble/curves/curve25519";
+import { ed25519, x25519 } from "@noble/curves/ed25519";
 import { sha512 } from "@noble/hashes/sha512";
-import type { IdentityKeyPair, KeyPair, OneTimeEntry, OneTimePrekey, PrekeyBundle } from "./types";
+import type {
+  IdentityKeyPair,
+  KeyPair,
+  OneTimeEntry,
+  OneTimePrekey,
+  PrekeyBundle,
+} from "./types";
 import { copyBytes } from "./utils";
 
 export type RandomSource = (buffer: Uint8Array) => void;
 
 const defaultRandomSource: RandomSource = (buffer: Uint8Array) => {
-  const cryptoObj = typeof globalThis !== "undefined" ? globalThis.crypto : undefined;
+  const cryptoObj =
+    typeof globalThis !== "undefined" ? globalThis.crypto : undefined;
   if (!cryptoObj || typeof cryptoObj.getRandomValues !== "function") {
     throw new Error("cryptocore: secure randomness is unavailable");
   }
@@ -39,7 +45,10 @@ export class Device {
 
   constructor(identity: IdentityKeyPair) {
     this.identity = identity;
-    this.signedPrekey = { Private: new Uint8Array(32), Public: new Uint8Array(32) };
+    this.signedPrekey = {
+      Private: new Uint8Array(32),
+      Public: new Uint8Array(32),
+    };
     this.signedSig = new Uint8Array();
     this.oneTime = new Map();
     this.nextOTKID = 1;
@@ -56,7 +65,10 @@ export class Device {
     if (oneTimeCount < 0) {
       oneTimeCount = 0;
     }
-    if (this.signedPrekey.Public.length === 0 || isZeroKey(this.signedPrekey.Public)) {
+    if (
+      this.signedPrekey.Public.length === 0 ||
+      isZeroKey(this.signedPrekey.Public)
+    ) {
       this.rotateSignedPrekey();
     }
     const bundle: PrekeyBundle = {
@@ -88,7 +100,7 @@ export function GenerateIdentityKeypair(): Device {
   const seed = readRandom(32);
   const signingPublic = ed25519.getPublicKey(seed);
   const dhPrivate = ed25519PrivToCurve25519(seed);
-  const dhPublic = curve25519.scalarMultBase(dhPrivate);
+  const dhPublic = x25519.scalarMultBase(dhPrivate);
   const identity: IdentityKeyPair = {
     signingPublic: copyBytes(signingPublic),
     signingPrivate: copyBytes(seed),
@@ -113,7 +125,7 @@ export function generateX25519KeyPair(): KeyPair {
   priv[0] &= 248;
   priv[31] &= 127;
   priv[31] |= 64;
-  const pub = curve25519.scalarMultBase(priv);
+  const pub = x25519.scalarMultBase(priv);
   return {
     Private: copyBytes(priv),
     Public: copyBytes(pub),

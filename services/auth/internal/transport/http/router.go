@@ -112,7 +112,7 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 		}
 		var req dto.DeviceRegisterRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		userID, err := uuid.Parse(strings.TrimSpace(req.UserID))

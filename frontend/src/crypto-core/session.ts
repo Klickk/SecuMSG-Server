@@ -1,10 +1,9 @@
-import { ed25519 } from "@noble/curves/ed25519";
-import { curve25519 } from "@noble/curves/curve25519";
+import { ed25519, x25519 } from "@noble/curves/ed25519";
 import { hkdf } from "@noble/hashes/hkdf";
 import { sha256 } from "@noble/hashes/sha256";
 import { Device, generateX25519KeyPair } from "./core";
 import { ErrInvalidPrekeySignature, ErrMissingOneTimeKey } from "./errors";
-import type {
+import {
   ChainState,
   HandshakeMessage,
   OneTimePrekey,
@@ -116,12 +115,12 @@ function deriveSharedSecretInitiator(
   eph: ReturnType<typeof generateX25519KeyPair>,
   otk?: OneTimePrekey,
 ): Uint8Array {
-  const dh1 = curve25519.scalarMult(d.identity.dhPrivate, bundle.SignedPrekey);
-  const dh2 = curve25519.scalarMult(eph.Private, bundle.IdentityKey);
-  const dh3 = curve25519.scalarMult(eph.Private, bundle.SignedPrekey);
+  const dh1 = x25519.scalarMult(d.identity.dhPrivate, bundle.SignedPrekey);
+  const dh2 = x25519.scalarMult(eph.Private, bundle.IdentityKey);
+  const dh3 = x25519.scalarMult(eph.Private, bundle.SignedPrekey);
   let secret = concatBytes(dh1, dh2, dh3);
   if (otk) {
-    const dh4 = curve25519.scalarMult(eph.Private, otk.Public);
+    const dh4 = x25519.scalarMult(eph.Private, otk.Public);
     secret = concatBytes(secret, dh4);
   }
   return secret;
@@ -132,12 +131,12 @@ function deriveSharedSecretResponder(
   msg: HandshakeMessage,
   otk?: { Private: Uint8Array; Public: Uint8Array },
 ): Uint8Array {
-  const dh1 = curve25519.scalarMult(d.signedPrekey.Private, msg.IdentityKey);
-  const dh2 = curve25519.scalarMult(d.identity.dhPrivate, msg.EphemeralKey);
-  const dh3 = curve25519.scalarMult(d.signedPrekey.Private, msg.EphemeralKey);
+  const dh1 = x25519.scalarMult(d.signedPrekey.Private, msg.IdentityKey);
+  const dh2 = x25519.scalarMult(d.identity.dhPrivate, msg.EphemeralKey);
+  const dh3 = x25519.scalarMult(d.signedPrekey.Private, msg.EphemeralKey);
   let secret = concatBytes(dh1, dh2, dh3);
   if (otk) {
-    const dh4 = curve25519.scalarMult(otk.Private, msg.EphemeralKey);
+    const dh4 = x25519.scalarMult(otk.Private, msg.EphemeralKey);
     secret = concatBytes(secret, dh4);
   }
   return secret;

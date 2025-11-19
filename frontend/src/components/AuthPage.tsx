@@ -3,6 +3,8 @@ import { LoginForm } from "./LoginForm";
 import { RegisterForm } from "./RegisterForm";
 import { Register } from "../services/register";
 import { Login } from "../services/login";
+import { useNavigate } from "react-router-dom";
+import { RegisterResponse } from "../types/types";
 
 type AuthMode = "login" | "register";
 
@@ -10,6 +12,7 @@ export const AuthPage: React.FC = () => {
   const [mode, setMode] = useState<AuthMode>("login");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const handleLogin = async (values: { email: string; password: string }) => {
     setIsLoading(true);
@@ -38,7 +41,12 @@ export const AuthPage: React.FC = () => {
       Register(values.name, values.email, values.password).then((success) => {
         if (!success) {
           setError("Registration failed. Please try again.");
-        } else console.log("Registration successful");
+        } else {
+          const resp: RegisterResponse = success as RegisterResponse;
+          localStorage.setItem("userId", resp.userId);
+          navigate("/dRegister");
+          console.log("Registration successful");
+        }
       });
       console.log("register submit", values);
     } catch (err) {

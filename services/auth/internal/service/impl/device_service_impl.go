@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -248,6 +249,13 @@ func decodeBase64Field(value, field string) ([]byte, error) {
 	if val == "" {
 		return nil, fmt.Errorf("%s is required", field)
 	}
+	if looksLikeNumericKey(val) {
+		buf, err := parseNumericBytes(val)
+		if err != nil {
+			return nil, fmt.Errorf("decode %s: %w", field, err)
+		}
+		return buf, nil
+	}
 	decoded, err := base64.StdEncoding.DecodeString(val)
 	if err != nil {
 		return nil, fmt.Errorf("decode %s: %w", field, err)
@@ -265,8 +273,16 @@ func encodeOneTimePreKeys(keys []string) ([]byte, error) {
 		if val == "" {
 			return nil, fmt.Errorf("one-time prekey[%d] is empty", i)
 		}
-		if _, err := base64.StdEncoding.DecodeString(val); err != nil {
-			return nil, fmt.Errorf("decode one-time prekey[%d]: %w", i, err)
+		if looksLikeNumericKey(val) {
+			buf, err := parseNumericBytes(val)
+			if err != nil {
+				return nil, fmt.Errorf("decode one-time prekey[%d]: %w", i, err)
+			}
+			val = base64.StdEncoding.EncodeToString(buf)
+		} else {
+			if _, err := base64.StdEncoding.DecodeString(val); err != nil {
+				return nil, fmt.Errorf("decode one-time prekey[%d]: %w", i, err)
+			}
 		}
 		normalized = append(normalized, val)
 	}
@@ -292,6 +308,41 @@ func decodeOneTimePreKeys(data []byte) ([]string, error) {
 		}
 	}
 	return normalized, nil
+}
+
+func looksLikeNumericKey(val string) bool {
+	if val == "" {
+		return false
+	}
+	for _, r := range val {
+		if (r >= '0' && r <= '9') || r == ',' || r == '[' || r == ']' || r == ' ' || r == '\t' || r == '\n' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func parseNumericBytes(val string) ([]byte, error) {
+	clean := strings.Trim(val, "[]")
+	parts := strings.FieldsFunc(clean, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t' || r == '\n'
+	})
+	if len(parts) == 0 {
+		return nil, errors.New("no numeric key data provided")
+	}
+	out := make([]byte, len(parts))
+	for i, part := range parts {
+		num, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, fmt.Errorf("parse byte[%d]: %w", i, err)
+		}
+		if num < 0 || num > 255 {
+			return nil, fmt.Errorf("parse byte[%d]: value out of range", i)
+		}
+		out[i] = byte(num)
+	}
+	return out, nil
 }
 
 func translateDeviceErr(err error) error {

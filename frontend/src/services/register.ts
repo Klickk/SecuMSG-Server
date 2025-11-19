@@ -1,11 +1,12 @@
 import axios from "axios";
 import config from "../config/config";
+import { RegisterResponse } from "../types/types";
 
 export const Register = async (
   name: string,
   email: string,
   password: string
-): Promise<boolean> => {
+): Promise<RegisterResponse> => {
   return axios
     .post(`${config.apiBaseUrl}/auth/register`, {
       email: email,
@@ -13,10 +14,10 @@ export const Register = async (
       password: password,
     })
     .then((response) => {
-      return response.status === 200;
+      return response.data as RegisterResponse;
     })
     .catch((error) => {
       console.error("Registration error:", error);
-      return false;
+      throw error;
     });
 };
