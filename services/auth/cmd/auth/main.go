@@ -39,9 +39,10 @@ func main() {
 	}, st)
 
 	as := impl.NewAuthServiceImpl(st, pw, ts)
+	ds := impl.NewDeviceServiceImpl(st)
 
 	// 3) HTTP router
-	mux := httpx.NewRouter(as, ts) // if your router needs cfg (CORS, trust proxy), pass it in here
+	mux := httpx.NewRouter(as, ds, ts) // if your router needs cfg (CORS, trust proxy), pass it in here
 
 	srv := &http.Server{
 		Addr:              cfg.Addr, // e.g. ":8081"

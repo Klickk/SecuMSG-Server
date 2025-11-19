@@ -7,6 +7,7 @@ var (
 	ErrEmailNotVerified   = errors.New("email not verified")
 	ErrUserDisabled       = errors.New("user disabled")
 	ErrDeviceRevoked      = errors.New("device revoked")
+	ErrNoOneTimePrekeys   = errors.New("one-time prekeys unavailable")
 	ErrRateLimited        = errors.New("rate limited")
 	ErrUserAlreadyExists  = errors.New("user already exists")
 	ErrInvalidToken       = errors.New("invalid token")
