@@ -17,7 +17,7 @@ const hkdfInfoX3DH = "SecuMSG-X3DH";
 
 export function InitSession(
   d: Device,
-  bundle: PrekeyBundle,
+  bundle: PrekeyBundle
 ): { session: SessionState; message: HandshakeMessage } {
   if (!d) {
     throw new Error("cryptocore: nil device");
@@ -28,7 +28,8 @@ export function InitSession(
   verifyPrekeyBundle(bundle);
 
   const ephemeral = generateX25519KeyPair();
-  const otk = bundle.OneTimePrekeys.length > 0 ? bundle.OneTimePrekeys[0] : undefined;
+  const otk =
+    bundle.OneTimePrekeys.length > 0 ? bundle.OneTimePrekeys[0] : undefined;
   const secret = deriveSharedSecretInitiator(d, bundle, ephemeral, otk);
   const { root, chain } = deriveInitialKeys(secret);
 
@@ -67,7 +68,7 @@ export function AcceptSession(d: Device, msg: HandshakeMessage): SessionState {
     throw new Error("cryptocore: nil handshake message");
   }
   let otk: { Private: Uint8Array; Public: Uint8Array } | undefined;
-  if (typeof msg.OneTimePrekeyID === "number") {
+  if (msg.OneTimePrekeyID) {
     const entry = d.oneTime.get(msg.OneTimePrekeyID);
     if (!entry) {
       throw ErrMissingOneTimeKey;
@@ -102,7 +103,7 @@ function verifyPrekeyBundle(bundle: PrekeyBundle): void {
   const valid = ed25519.verify(
     bundle.SignedPrekeySig,
     bundle.SignedPrekey,
-    bundle.IdentitySignatureKey,
+    bundle.IdentitySignatureKey
   );
   if (!valid) {
     throw ErrInvalidPrekeySignature;
@@ -113,7 +114,7 @@ function deriveSharedSecretInitiator(
   d: Device,
   bundle: PrekeyBundle,
   eph: ReturnType<typeof generateX25519KeyPair>,
-  otk?: OneTimePrekey,
+  otk?: OneTimePrekey
 ): Uint8Array {
   const dh1 = x25519.scalarMult(d.identity.dhPrivate, bundle.SignedPrekey);
   const dh2 = x25519.scalarMult(eph.Private, bundle.IdentityKey);
@@ -129,7 +130,7 @@ function deriveSharedSecretInitiator(
 function deriveSharedSecretResponder(
   d: Device,
   msg: HandshakeMessage,
-  otk?: { Private: Uint8Array; Public: Uint8Array },
+  otk?: { Private: Uint8Array; Public: Uint8Array }
 ): Uint8Array {
   const dh1 = x25519.scalarMult(d.signedPrekey.Private, msg.IdentityKey);
   const dh2 = x25519.scalarMult(d.identity.dhPrivate, msg.EphemeralKey);
@@ -142,7 +143,10 @@ function deriveSharedSecretResponder(
   return secret;
 }
 
-function deriveInitialKeys(secret: Uint8Array): { root: ChainState["Key"]; chain: ChainState["Key"]; } {
+function deriveInitialKeys(secret: Uint8Array): {
+  root: ChainState["Key"];
+  chain: ChainState["Key"];
+} {
   const okm = hkdf(sha256, secret, new Uint8Array(), utf8(hkdfInfoX3DH), 64);
   return {
     root: okm.slice(0, 32),

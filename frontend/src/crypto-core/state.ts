@@ -24,7 +24,6 @@ export function ExportDevice(device: Device): DeviceState {
     },
     SignedPrekeySig: toBase64(device.signedSig),
     OneTime: {},
-    NextOTKID: device.nextOTKID,
   };
   for (const [id, entry] of device.oneTime.entries()) {
     state.OneTime![id] = {
@@ -61,13 +60,11 @@ export function ImportDevice(state: DeviceState): Device {
   device.oneTime = new Map();
   if (state.OneTime) {
     for (const [key, value] of Object.entries(state.OneTime)) {
-      const id = Number(key);
       const priv = decodeFixed(value.Private, 32, "one-time private");
       const pub = decodeFixed(value.Public, 32, "one-time public");
-      device.oneTime.set(id, { key: { Private: priv, Public: pub } });
+      device.oneTime.set(key, { key: { Private: priv, Public: pub } });
     }
   }
-  device.nextOTKID = state.NextOTKID;
   return device;
 }
 

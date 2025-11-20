@@ -40,8 +40,7 @@ export class Device {
   identity: IdentityKeyPair;
   signedPrekey: KeyPair;
   signedSig: Uint8Array;
-  oneTime: Map<number, OneTimeEntry>;
-  nextOTKID: number;
+  oneTime: Map<string, OneTimeEntry>;
 
   constructor(identity: IdentityKeyPair) {
     this.identity = identity;
@@ -51,7 +50,6 @@ export class Device {
     };
     this.signedSig = new Uint8Array();
     this.oneTime = new Map();
-    this.nextOTKID = 1;
   }
 
   rotateSignedPrekey(): void {
@@ -80,8 +78,7 @@ export class Device {
     };
     for (let i = 0; i < oneTimeCount; i += 1) {
       const kp = generateX25519KeyPair();
-      const id = this.nextOTKID;
-      this.nextOTKID += 1;
+      const id = generateUUID();
       this.oneTime.set(id, { key: kp });
       bundle.OneTimePrekeys.push({ ID: id, Public: copyBytes(kp.Public) });
     }
@@ -135,3 +132,19 @@ export function generateX25519KeyPair(): KeyPair {
 function isZeroKey(key: Uint8Array): boolean {
   return key.every((b) => b === 0);
 }
+
+const generateUUID = (): string => {
+  const bytes = readRandom(16);
+  // Per RFC 4122 section 4.4
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));
+  return [
+    hex.slice(0, 4).join(""),
+    hex.slice(4, 6).join(""),
+    hex.slice(6, 8).join(""),
+    hex.slice(8, 10).join(""),
+    hex.slice(10, 16).join(""),
+  ].join("-");
+};

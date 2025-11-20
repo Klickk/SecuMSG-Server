@@ -26,7 +26,7 @@ func NewRouter(svc *service.Service) *http.ServeMux {
 		}
 		var req dto.RegisterDeviceRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		res, err := svc.RegisterDevice(r.Context(), req)

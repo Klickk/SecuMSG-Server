@@ -23,7 +23,7 @@ export interface OneTimeEntry {
 }
 
 export interface OneTimePrekey {
-  ID: number;
+  ID: string;
   Public: Bytes32;
 }
 
@@ -39,7 +39,7 @@ export interface HandshakeMessage {
   IdentityKey: Bytes32;
   IdentitySignatureKey: Uint8Array;
   EphemeralKey: Bytes32;
-  OneTimePrekeyID?: number;
+  OneTimePrekeyID?: string;
 }
 
 export interface ChainState {
@@ -58,7 +58,7 @@ export interface SessionState {
   RemoteSignature: Uint8Array;
   PN: number;
   Role: SessionRole;
-  PendingPrekey?: number;
+  PendingPrekey?: string;
   skipped: Map<string, Bytes32>;
 }
 
@@ -67,7 +67,7 @@ export class MessageHeader {
     public DHPublic: Bytes32,
     public PN: number,
     public N: number,
-    public Nonce: Bytes12,
+    public Nonce: Bytes12
   ) {}
 
   associatedData(): Uint8Array {
@@ -87,8 +87,7 @@ export interface DeviceState {
   DHPublic: string;
   SignedPrekey: X25519KeyPairState;
   SignedPrekeySig: string;
-  OneTime?: Record<number, X25519KeyPairState>;
-  NextOTKID: number;
+  OneTime?: Record<string, X25519KeyPairState>;
 }
 
 export interface X25519KeyPairState {
@@ -112,6 +111,6 @@ export interface SessionStateSnapshot {
   RemoteSignature: string;
   PN: number;
   Role: SessionRole;
-  PendingPrekey?: number;
+  PendingPrekey?: string;
   Skipped?: Record<string, string>;
 }

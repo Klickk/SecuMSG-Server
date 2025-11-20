@@ -11,7 +11,7 @@ import {
   InitSession,
   type Device,
   type HandshakeMessage,
-  type MessageHeader,
+  MessageHeader,
   type PrekeyBundle,
   type SessionState,
 } from "../crypto-core";
@@ -32,7 +32,7 @@ export type HeaderPayload = {
     identityKey: string;
     identitySignatureKey: string;
     ephemeralKey: string;
-    oneTimePrekeyId?: number;
+    oneTimePrekeyId?: string;
   };
   ratchet: {
     dhPublic: string;
@@ -81,7 +81,7 @@ export class MessagingClient {
       messagesBaseUrl: string;
     },
     device: Device,
-    sessions: Map<string, SessionState> = new Map(),
+    sessions: Map<string, SessionState> = new Map()
   ) {
     this.device = device;
     this.sessions = sessions;
@@ -90,14 +90,18 @@ export class MessagingClient {
   static async registerDevice(
     userId: string,
     deviceName: string,
-    baseUrl: string,
+    baseUrl: string
   ): Promise<{
     client: MessagingClient;
-    device: { deviceId: string; userId: string; name: string; platform: string };
-  }>
-  {
+    device: {
+      deviceId: string;
+      userId: string;
+      name: string;
+      platform: string;
+    };
+  }> {
     const device = GenerateIdentityKeypair();
-    const bundle = device.PublishPrekeyBundle(0);
+    const bundle = device.PublishPrekeyBundle(5);
 
     const authPayload = {
       UserID: userId,
@@ -107,11 +111,14 @@ export class MessagingClient {
         IdentityKeyPub: toBase64(bundle.IdentityKey),
         SignedPrekeyPub: toBase64(bundle.SignedPrekey),
         SignedPrekeySig: toBase64(bundle.SignedPrekeySig),
-        OneTimePrekeys: [],
+        OneTimePrekeys: bundle.OneTimePrekeys.map((x) => x.Public.toString()),
       },
     };
 
-    const authResp = await axios.post(`${baseUrl}/auth/devices/register`, authPayload);
+    const authResp = await axios.post(
+      `${baseUrl}/auth/devices/register`,
+      authPayload
+    );
     const deviceInfo = authResp.data as {
       deviceId: string;
       userId: string;
@@ -120,16 +127,19 @@ export class MessagingClient {
     };
 
     const keysPayload = {
-      userId,
-      deviceId: deviceInfo.deviceId,
-      identityKey: toBase64(bundle.IdentityKey),
-      identitySignatureKey: toBase64(bundle.IdentitySignatureKey),
-      signedPreKey: {
-        publicKey: toBase64(bundle.SignedPrekey),
-        signature: toBase64(bundle.SignedPrekeySig),
-        createdAt: new Date().toISOString(),
+      UserID: userId,
+      DeviceID: deviceInfo.deviceId,
+      IdentityKey: toBase64(bundle.IdentityKey),
+      IdentitySignatureKey: toBase64(bundle.IdentitySignatureKey),
+      SignedPreKey: {
+        PublicKey: toBase64(bundle.SignedPrekey),
+        Signature: toBase64(bundle.SignedPrekeySig),
+        CreatedAt: new Date().toISOString(),
       },
-      oneTimePreKeys: [] as Array<{ id?: string; publicKey: string }>,
+      OneTimePreKeys: bundle.OneTimePrekeys.map((x) => ({
+        ID: x.ID.toString(),
+        PublicKey: toBase64(x.Public),
+      })),
     };
 
     await axios.post(`${baseUrl}/keys/device/register`, keysPayload);
@@ -142,7 +152,7 @@ export class MessagingClient {
         messagesBaseUrl: baseUrl,
       },
       device,
-      new Map(),
+      new Map()
     );
 
     client.save();
@@ -170,7 +180,7 @@ export class MessagingClient {
           messagesBaseUrl: parsed.messagesBaseUrl,
         },
         device,
-        sessions,
+        sessions
       );
     } catch (err) {
       console.error("Failed to load messaging state", err);
@@ -208,7 +218,7 @@ export class MessagingClient {
   async sendMessage(
     convId: string,
     toDeviceId: string,
-    plaintext: string,
+    plaintext: string
   ): Promise<OutboundMessage> {
     const { session, handshake } = await this.ensureSession(convId, toDeviceId);
 
@@ -264,9 +274,12 @@ export class MessagingClient {
 
   connectWebSocket(
     onMessage: (msg: InboundMessage) => void,
-    onStatus?: (state: "open" | "closed" | "error") => void,
+    onStatus?: (state: "open" | "closed" | "error") => void
   ): WebSocket {
-    const url = buildWebSocketURL(this.state.messagesBaseUrl, this.state.deviceId);
+    const url = buildWebSocketURL(
+      this.state.messagesBaseUrl,
+      this.state.deviceId
+    );
     const ws = new WebSocket(url);
 
     ws.onopen = () => {
@@ -296,9 +309,8 @@ export class MessagingClient {
 
   private async ensureSession(
     convId: string,
-    toDeviceId: string,
-  ): Promise<{ session: SessionState; handshake?: HandshakeMessage }>
-  {
+    toDeviceId: string
+  ): Promise<{ session: SessionState; handshake?: HandshakeMessage }> {
     const existing = this.sessions.get(convId);
     if (existing) {
       return { session: existing };
@@ -311,7 +323,9 @@ export class MessagingClient {
   }
 
   private async fetchBundle(deviceId: string): Promise<PrekeyBundle> {
-    const endpoint = `${this.state.keysBaseUrl}/keys/bundle?device_id=${encodeURIComponent(deviceId)}`;
+    const endpoint = `${
+      this.state.keysBaseUrl
+    }/keys/bundle?device_id=${encodeURIComponent(deviceId)}`;
     const response = await axios.get(endpoint);
     const data = response.data as {
       deviceId: string;
@@ -330,15 +344,11 @@ export class MessagingClient {
     };
 
     if (data.oneTimePreKey) {
-      const id = Number.parseInt(data.oneTimePreKey.id, 10);
-      if (!Number.isNaN(id)) {
-        bundle.OneTimePrekeys.push({
-          ID: id,
-          Public: toUint32Array(data.oneTimePreKey.publicKey),
-        });
-      }
+      bundle.OneTimePrekeys.push({
+        ID: data.oneTimePreKey.id,
+        Public: toUint32Array(data.oneTimePreKey.publicKey),
+      });
     }
-
     return bundle;
   }
 }
@@ -353,7 +363,7 @@ function toUint32Array(b64: string): Uint8Array {
 
 function buildHeaderPayload(
   header: MessageHeader,
-  handshake?: HandshakeMessage,
+  handshake?: HandshakeMessage
 ): HeaderPayload {
   const payload: HeaderPayload = {
     ratchet: {
@@ -402,7 +412,7 @@ function payloadToMessageHeader(p: HeaderPayload["ratchet"]): MessageHeader {
         throw new Error(`invalid nonce length ${nonce.length}`);
       }
       return nonce;
-    })(),
+    })()
   );
 }
 
