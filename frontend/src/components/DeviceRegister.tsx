@@ -1,6 +1,9 @@
-import React, { useState } from "react";
-import registerDevice from "../services/registerDevice";
-import { DeviceRegisterResponse } from "../types/types";
+import React, { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import registerDevice, {
+  DeviceRegistrationResult,
+} from "../services/registerDevice";
+import { InboundMessage } from "../lib/messagingClient";
 
 export type DeviceRegisterFormValues = {
   name: string;
@@ -18,6 +21,11 @@ export const DeviceRegisterForm: React.FC<DeviceRegisterFormProps> = ({
   const [values, setValues] = useState<DeviceRegisterFormValues>({
     name: "",
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [messages, setMessages] = useState<InboundMessage[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const { value } = e.target;
@@ -27,13 +35,43 @@ export const DeviceRegisterForm: React.FC<DeviceRegisterFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!values.name.trim()) return;
-    registerDevice(values.name).then((x) => {
-      console.log("Device registered successfully");
-      localStorage.setItem("deviceId", x.deviceId);
-      localStorage.setItem("deviceName", x.name);
-      localStorage.setItem("devicePlatform", x.platform);
-    });
+    setIsSubmitting(true);
+    setStatus(null);
+    try {
+      const { device, client }: DeviceRegistrationResult = await registerDevice(
+        values.name,
+      );
+
+      localStorage.setItem("deviceId", device.deviceId);
+      localStorage.setItem("deviceName", device.name);
+      localStorage.setItem("devicePlatform", device.platform);
+
+      const ws = client.connectWebSocket((msg) => {
+        setMessages((prev) => [...prev, msg]);
+      }, (state) => {
+        if (state === "open") {
+          setStatus("WebSocket connected. Listening for messages...");
+        } else if (state === "error") {
+          setStatus("WebSocket error. Retrying might be necessary.");
+        }
+      });
+      wsRef.current = ws;
+
+      setStatus("Device registered. Syncing messages...");
+      setTimeout(() => navigate("/messages"), 350);
+    } catch (err) {
+      console.error("Error registering device:", err);
+      setStatus("Failed to register device. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  useEffect(() => {
+    return () => {
+      wsRef.current?.close();
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
@@ -69,17 +107,34 @@ export const DeviceRegisterForm: React.FC<DeviceRegisterFormProps> = ({
 
             <button
               type="submit"
-              disabled={isLoading || !values.name.trim()}
+              disabled={isLoading || isSubmitting || !values.name.trim()}
               className="w-full rounded-lg bg-sky-500 hover:bg-sky-400 disabled:opacity-60 disabled:cursor-not-allowed transition px-3 py-2 text-sm font-medium text-slate-900"
             >
-              {isLoading ? "Registering device..." : "Register device"}
+              {isSubmitting || isLoading
+                ? "Registering device..."
+                : "Register device"}
             </button>
+            {status && (
+              <p className="text-xs text-slate-400">{status}</p>
+            )}
           </form>
         </div>
 
-        <p className="mt-4 text-center text-xs text-slate-500">
-          A unique keypair will be generated locally for this device. 🔐
-        </p>
+        <div className="mt-4 text-center text-xs text-slate-500 space-y-2">
+          <p>A unique keypair will be generated locally for this device. 🔐</p>
+          {messages.length > 0 && (
+            <div className="rounded-lg bg-slate-900/70 border border-slate-800 px-3 py-2 text-left">
+              <p className="text-slate-300 font-semibold mb-1">Recent messages</p>
+              <ul className="space-y-1 text-left">
+                {messages.slice(-3).map((m, idx) => (
+                  <li key={`${m.convId}-${idx}`} className="text-xs text-slate-400">
+                    <span className="text-slate-200">{m.peerDeviceId}</span>: {m.plaintext}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

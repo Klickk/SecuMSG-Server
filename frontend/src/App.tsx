@@ -1,24 +1,15 @@
-import { useState } from "react";
 import { Route, Routes } from "react-router-dom";
 import { AuthPage } from "./components/AuthPage";
 import { DeviceRegisterForm } from "./components/DeviceRegister";
+import { MessagingPage } from "./components/MessagingPage";
 
 const App = () => {
-  const [loggedIn, setLoggedIn] = useState<boolean>(false);
-
   return (
     <div>
       <Routes>
-        {loggedIn ? (
-          <></>
-        ) : (
-          // Render logged-in routes/components here
-          <>
-            <Route path="/" Component={AuthPage} />
-            <Route path="/dRegister" Component={DeviceRegisterForm} />
-            // Render login/signup routes/components here
-          </>
-        )}
+        <Route path="/" Component={AuthPage} />
+        <Route path="/dRegister" Component={DeviceRegisterForm} />
+        <Route path="/messages" Component={MessagingPage} />
       </Routes>
     </div>
   );

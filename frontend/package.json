@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare:wasm": "node scripts/prepare-wasm.mjs",
+    "prepare:wasm": "echo \"Skipping wasm build; using TS crypto-core\"",
     "predev": "npm run prepare:wasm",
     "prebuild": "npm run prepare:wasm",
     "dev": "vite",

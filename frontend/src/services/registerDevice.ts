@@ -1,36 +1,27 @@
-import axios from "axios";
-import { GenerateIdentityKeypair } from "../crypto-core";
 import config from "../config/config";
+import { MessagingClient } from "../lib/messagingClient";
 import { DeviceRegisterResponse } from "../types/types";
+
+export type DeviceRegistrationResult = {
+  device: DeviceRegisterResponse;
+  client: MessagingClient;
+};
 
 const registerDevice = async (
   deviceName: string
-): Promise<DeviceRegisterResponse> => {
-  const newDevice = GenerateIdentityKeypair();
-  const publicBundle = newDevice.PublishPrekeyBundle(5);
-  const userId: string = localStorage.getItem("userId")!;
-  try {
-    return axios
-      .post(`${config.apiBaseUrl}/auth/devices/register`, {
-        UserID: userId,
-        Name: deviceName,
-        Platform: navigator.userAgent,
-        KeyBundle: {
-          IdentityKeyPub: publicBundle.IdentityKey.toString(),
-          SignedPrekeyPub: publicBundle.SignedPrekey.toString(),
-          SignedPrekeySig: publicBundle.SignedPrekeySig.toString(),
-          OneTimePrekeys: publicBundle.OneTimePrekeys.map((x) =>
-            x.Public.toString()
-          ),
-        },
-      })
-      .then((response) => {
-        return response.data as DeviceRegisterResponse;
-      });
-  } catch (error) {
-    console.error("Error registering device:", error);
-    throw error;
+): Promise<DeviceRegistrationResult> => {
+  const userId = localStorage.getItem("userId");
+  if (!userId) {
+    throw new Error("User ID missing. Please register or log in first.");
   }
+
+  const { client, device } = await MessagingClient.registerDevice(
+    userId,
+    deviceName,
+    config.apiBaseUrl
+  );
+
+  return { device: device as DeviceRegisterResponse, client };
 };
 
 export default registerDevice;
