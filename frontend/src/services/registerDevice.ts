@@ -1,6 +1,7 @@
 import config from "../config/config";
 import { MessagingClient } from "../lib/messagingClient";
 import { DeviceRegisterResponse } from "../types/types";
+import { getItem } from "../lib/storage";
 
 export type DeviceRegistrationResult = {
   device: DeviceRegisterResponse;
@@ -10,7 +11,7 @@ export type DeviceRegistrationResult = {
 const registerDevice = async (
   deviceName: string
 ): Promise<DeviceRegistrationResult> => {
-  const userId = localStorage.getItem("userId");
+  const userId = await getItem("userId");
   if (!userId) {
     throw new Error("User ID missing. Please register or log in first.");
   }

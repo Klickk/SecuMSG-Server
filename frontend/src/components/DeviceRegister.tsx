@@ -4,6 +4,7 @@ import registerDevice, {
   DeviceRegistrationResult,
 } from "../services/registerDevice";
 import { InboundMessage } from "../lib/messagingClient";
+import { setItem } from "../lib/storage";
 
 export type DeviceRegisterFormValues = {
   name: string;
@@ -42,9 +43,9 @@ export const DeviceRegisterForm: React.FC<DeviceRegisterFormProps> = ({
         values.name,
       );
 
-      localStorage.setItem("deviceId", device.deviceId);
-      localStorage.setItem("deviceName", device.name);
-      localStorage.setItem("devicePlatform", device.platform);
+      await setItem("deviceId", device.deviceId);
+      await setItem("deviceName", device.name);
+      await setItem("devicePlatform", device.platform);
 
       const ws = client.connectWebSocket((msg) => {
         setMessages((prev) => [...prev, msg]);

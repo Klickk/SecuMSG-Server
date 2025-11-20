@@ -5,6 +5,7 @@ import {
   MessagingClient,
   OutboundMessage,
 } from "../lib/messagingClient";
+import { getItem, setItem } from "../lib/storage";
 
 type Contact = {
   deviceId: string;
@@ -17,27 +18,10 @@ const CONTACTS_KEY = "secumsg-contacts";
 
 const defaultConvId = () => crypto.randomUUID();
 
-const loadContacts = (): Contact[] => {
-  try {
-    const stored = localStorage.getItem(CONTACTS_KEY);
-    if (!stored) return [];
-    return JSON.parse(stored) as Contact[];
-  } catch (err) {
-    console.error("Failed to load contacts", err);
-    return [];
-  }
-};
-
-const saveContacts = (contacts: Contact[]) => {
-  localStorage.setItem(CONTACTS_KEY, JSON.stringify(contacts));
-};
-
 export const MessagingPage: React.FC = () => {
   const [client, setClient] = useState<MessagingClient | null>(null);
-  const [contacts, setContacts] = useState<Contact[]>(loadContacts);
-  const [selectedConvId, setSelectedConvId] = useState<string | null>(
-    () => loadContacts()[0]?.convId ?? null
-  );
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [text, setText] = useState<string>("");
   const [messages, setMessages] = useState<(InboundMessage | OutboundMessage)[]>([]);
   const [wsStatus, setWsStatus] = useState<string>("Connecting to message stream...");
@@ -46,60 +30,93 @@ export const MessagingPage: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const loaded = MessagingClient.load();
-    if (!loaded) {
-      navigate("/dRegister");
-      return;
-    }
-    setClient(loaded);
+    let cancelled = false;
+    let socket: WebSocket | null = null;
+    (async () => {
+      const loaded = await MessagingClient.load();
+      if (cancelled) return;
+      if (!loaded) {
+        navigate("/dRegister");
+        return;
+      }
+      setClient(loaded);
 
-    const socket = loaded.connectWebSocket((msg) => {
-      setMessages((prev) => [...prev, msg]);
-      setContacts((prev) => {
-        const existingByConv = prev.find((c) => c.convId === msg.convId);
-        if (existingByConv) {
-          return prev.map((c) =>
-            c.convId === msg.convId
-              ? { ...c, lastActivity: msg.sentAt.toISOString() }
-              : c
-          );
-        }
+      socket = loaded.connectWebSocket((msg) => {
+        setMessages((prev) => [...prev, msg]);
+        setContacts((prev) => {
+          const existingByConv = prev.find((c) => c.convId === msg.convId);
+          if (existingByConv) {
+            return prev.map((c) =>
+              c.convId === msg.convId
+                ? { ...c, lastActivity: msg.sentAt.toISOString() }
+                : c
+            );
+          }
 
-        const byDeviceIdx = prev.findIndex((c) => c.deviceId === msg.peerDeviceId);
-        if (byDeviceIdx >= 0) {
-          const clone = [...prev];
-          clone[byDeviceIdx] = {
-            ...clone[byDeviceIdx],
-            convId: msg.convId,
-            lastActivity: msg.sentAt.toISOString(),
-          };
-          return clone;
-        }
+          const byDeviceIdx = prev.findIndex((c) => c.deviceId === msg.peerDeviceId);
+          if (byDeviceIdx >= 0) {
+            const clone = [...prev];
+            clone[byDeviceIdx] = {
+              ...clone[byDeviceIdx],
+              convId: msg.convId,
+              lastActivity: msg.sentAt.toISOString(),
+            };
+            return clone;
+          }
 
-        return [
-          ...prev,
-          {
-            deviceId: msg.peerDeviceId,
-            label: `Device ${msg.peerDeviceId.slice(0, 6)}`,
-            convId: msg.convId,
-            lastActivity: msg.sentAt.toISOString(),
-          },
-        ];
+          return [
+            ...prev,
+            {
+              deviceId: msg.peerDeviceId,
+              label: `Device ${msg.peerDeviceId.slice(0, 6)}`,
+              convId: msg.convId,
+              lastActivity: msg.sentAt.toISOString(),
+            },
+          ];
+        });
+        setSelectedConvId((prev) => prev ?? msg.convId);
+      }, (state) => {
+        if (state === "open") setWsStatus("Listening for incoming messages");
+        if (state === "closed") setWsStatus("Connection closed");
+        if (state === "error") setWsStatus("Connection error – retry or refresh");
       });
-      setSelectedConvId((prev) => prev ?? msg.convId);
-    }, (state) => {
-      if (state === "open") setWsStatus("Listening for incoming messages");
-      if (state === "closed") setWsStatus("Connection closed");
-      if (state === "error") setWsStatus("Connection error – retry or refresh");
-    });
+    })();
+
     return () => {
-      socket.close();
+      cancelled = true;
+      socket?.close();
     };
   }, [navigate]);
 
   useEffect(() => {
-    saveContacts(contacts);
+    (async () => {
+      await setItem(CONTACTS_KEY, JSON.stringify(contacts));
+    })();
   }, [contacts]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await getItem(CONTACTS_KEY);
+        if (cancelled || !stored) return;
+        const parsed = JSON.parse(stored) as Contact[];
+        setContacts(parsed);
+        setSelectedConvId((prev) => prev ?? parsed[0]?.convId ?? null);
+      } catch (err) {
+        console.error("Failed to load contacts", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedConvId && contacts.length > 0) {
+      setSelectedConvId(contacts[0].convId);
+    }
+  }, [contacts, selectedConvId]);
 
   const header = useMemo(() => {
     if (!client) return "";

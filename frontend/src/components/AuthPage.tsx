@@ -5,6 +5,7 @@ import { Register } from "../services/register";
 import { Login } from "../services/login";
 import { useNavigate } from "react-router-dom";
 import { RegisterResponse } from "../types/types";
+import { setItem } from "../lib/storage";
 
 type AuthMode = "login" | "register";
 
@@ -18,11 +19,10 @@ export const AuthPage: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      Login(values.email, values.password).then((tokenResponse) => {
-        localStorage.setItem("accessToken", tokenResponse.accessToken);
-        localStorage.setItem("refreshToken", tokenResponse.refreshToken);
-        console.log("Received tokens:", tokenResponse);
-      });
+      const tokenResponse = await Login(values.email, values.password);
+      await setItem("accessToken", tokenResponse.accessToken);
+      await setItem("refreshToken", tokenResponse.refreshToken);
+      console.log("Received tokens:", tokenResponse);
     } catch (err) {
       setError("Failed to sign in. Please try again.");
     } finally {
@@ -36,24 +36,23 @@ export const AuthPage: React.FC = () => {
     password: string;
   }) => {
     setIsLoading(true);
-    setError(null);
-    try {
-      Register(values.name, values.email, values.password).then((success) => {
+      setError(null);
+      try {
+        const success = await Register(values.name, values.email, values.password);
         if (!success) {
           setError("Registration failed. Please try again.");
         } else {
           const resp: RegisterResponse = success as RegisterResponse;
-          localStorage.setItem("userId", resp.userId);
+          await setItem("userId", resp.userId);
           navigate("/dRegister");
           console.log("Registration successful");
         }
-      });
-      console.log("register submit", values);
-    } catch (err) {
-      setError("Failed to create account. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
+        console.log("register submit", values);
+      } catch (err) {
+        setError("Failed to create account. Please try again.");
+      } finally {
+        setIsLoading(false);
+      }
   };
 
   return (

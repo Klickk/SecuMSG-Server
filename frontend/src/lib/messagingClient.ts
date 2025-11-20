@@ -16,6 +16,7 @@ import {
   type SessionState,
 } from "../crypto-core";
 import { fromBase64, toBase64, utf8 } from "../crypto-core/utils";
+import { getItem, setItem } from "./storage";
 
 export type InboundEnvelope = {
   id: string;
@@ -155,13 +156,13 @@ export class MessagingClient {
       new Map()
     );
 
-    client.save();
+    await client.save();
 
     return { client, device: deviceInfo };
   }
 
-  static load(): MessagingClient | null {
-    const stored = localStorage.getItem(STORAGE_KEY);
+  static async load(): Promise<MessagingClient | null> {
+    const stored = await getItem(STORAGE_KEY);
     if (!stored) return null;
     try {
       const parsed: StoredMessagingState = JSON.parse(stored);
@@ -188,7 +189,7 @@ export class MessagingClient {
     }
   }
 
-  save(): void {
+  async save(): Promise<void> {
     const snapshot: StoredMessagingState = {
       userId: this.state.userId,
       deviceId: this.state.deviceId,
@@ -204,7 +205,7 @@ export class MessagingClient {
       }
     }
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    await setItem(STORAGE_KEY, JSON.stringify(snapshot));
   }
 
   deviceId(): string {
@@ -233,7 +234,7 @@ export class MessagingClient {
       header: headerPayload,
     });
 
-    this.save();
+    await this.save();
 
     return {
       direction: "outbound",
@@ -261,7 +262,7 @@ export class MessagingClient {
     const plaintextBytes = Decrypt(session, ciphertext, header);
     const clear = new TextDecoder().decode(plaintextBytes);
 
-    this.save();
+    await this.save();
 
     return {
       direction: "inbound",
