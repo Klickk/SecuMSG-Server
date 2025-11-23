@@ -52,6 +52,33 @@ func (s *Store) PendingForDevice(ctx context.Context, deviceID uuid.UUID, limit 
 	return msgs, nil
 }
 
+type HistoryFilter struct {
+	DeviceID uuid.UUID
+	ConvID   uuid.UUID
+	Since    time.Time
+	Limit    int
+}
+
+func (s *Store) History(ctx context.Context, f HistoryFilter) ([]Message, error) {
+	var msgs []Message
+	tx := s.db.WithContext(ctx).
+		Where("to_device_id = ?", f.DeviceID)
+	if f.ConvID != uuid.Nil {
+		tx = tx.Where("conv_id = ?", f.ConvID)
+	}
+	if !f.Since.IsZero() {
+		tx = tx.Where("sent_at > ?", f.Since)
+	}
+	tx = tx.Order("sent_at asc")
+	if f.Limit > 0 {
+		tx = tx.Limit(f.Limit)
+	}
+	if err := tx.Find(&msgs).Error; err != nil {
+		return nil, err
+	}
+	return msgs, nil
+}
+
 func (s *Store) MarkDelivered(ctx context.Context, ids []uuid.UUID, at time.Time) error {
 	if len(ids) == 0 {
 		return nil

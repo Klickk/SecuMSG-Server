@@ -21,12 +21,14 @@ const defaultConvId = () => crypto.randomUUID();
 export const MessagingPage: React.FC = () => {
   const [client, setClient] = useState<MessagingClient | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactsInitialized, setContactsInitialized] = useState(false);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [text, setText] = useState<string>("");
   const [messages, setMessages] = useState<(InboundMessage | OutboundMessage)[]>([]);
   const [wsStatus, setWsStatus] = useState<string>("Connecting to message stream...");
   const [showAddContact, setShowAddContact] = useState(false);
   const [newContact, setNewContact] = useState({ deviceId: "", label: "" });
+  const [historyFetched, setHistoryFetched] = useState<Record<string, boolean>>({});
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -89,22 +91,46 @@ export const MessagingPage: React.FC = () => {
   }, [navigate]);
 
   useEffect(() => {
+    if (!client || contacts.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const all: (InboundMessage | OutboundMessage)[] = [];
+      for (const contact of contacts) {
+        const convMessages = await client.loadLocalHistory(contact.convId);
+        if (cancelled) return;
+        all.push(...convMessages);
+      }
+      all.sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime());
+      setMessages(all);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, contacts]);
+
+  useEffect(() => {
+    if (!contactsInitialized) return;
     (async () => {
       await setItem(CONTACTS_KEY, JSON.stringify(contacts));
     })();
-  }, [contacts]);
+  }, [contacts, contactsInitialized]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const stored = await getItem(CONTACTS_KEY);
-        if (cancelled || !stored) return;
-        const parsed = JSON.parse(stored) as Contact[];
-        setContacts(parsed);
-        setSelectedConvId((prev) => prev ?? parsed[0]?.convId ?? null);
+        if (!cancelled && stored) {
+          const parsed = JSON.parse(stored) as Contact[];
+          setContacts(parsed);
+          setSelectedConvId((prev) => prev ?? parsed[0]?.convId ?? null);
+        }
       } catch (err) {
         console.error("Failed to load contacts", err);
+      } finally {
+        if (!cancelled) {
+          setContactsInitialized(true);
+        }
       }
     })();
     return () => {
@@ -135,6 +161,34 @@ export const MessagingPage: React.FC = () => {
       .slice()
       .sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime());
   }, [activeContact, messages]);
+
+  useEffect(() => {
+    if (!client || !activeContact) return;
+    if (historyFetched[activeContact.convId]) return;
+    let cancelled = false;
+    (async () => {
+      const last = activeMessages[activeMessages.length - 1]?.sentAt;
+      try {
+        const fetched = await client.fetchHistorySince(activeContact.convId, last);
+        if (!cancelled && fetched.length > 0) {
+          setMessages((prev) => [...prev, ...fetched]);
+        }
+      } catch (err) {
+        console.error("Failed to sync message history", err);
+      } finally {
+        if (!cancelled) {
+          setHistoryFetched((prev) => ({
+            ...prev,
+            [activeContact.convId]: true,
+          }));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeContact?.convId, activeMessages, client, historyFetched]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();

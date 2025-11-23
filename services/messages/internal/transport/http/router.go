@@ -12,6 +12,7 @@ import (
 	"messages/internal/service"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -68,6 +69,7 @@ func NewRouter(svc *service.Service, poll time.Duration, batch int) http.Handler
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/messages/send", h.handleSend)
+	mux.HandleFunc("/messages/history", h.handleHistory)
 	mux.HandleFunc("/ws", h.handleWS)
 	mux.HandleFunc("/client/init", h.handleClientInit)
 	mux.HandleFunc("/client/send", h.handleClientSend)
@@ -131,6 +133,78 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 		SentAt:     msg.SentAt,
 	}
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	params := r.URL.Query()
+	deviceParam := params.Get("device_id")
+	if deviceParam == "" {
+		http.Error(w, "device_id is required", http.StatusBadRequest)
+		return
+	}
+	deviceID, err := uuid.Parse(deviceParam)
+	if err != nil {
+		http.Error(w, "invalid device_id", http.StatusBadRequest)
+		return
+	}
+
+	var convID uuid.UUID
+	if convParam := params.Get("conv_id"); convParam != "" {
+		convID, err = uuid.Parse(convParam)
+		if err != nil {
+			http.Error(w, "invalid conv_id", http.StatusBadRequest)
+			return
+		}
+	}
+
+	var since time.Time
+	if sinceParam := params.Get("since"); sinceParam != "" {
+		since, err = time.Parse(time.RFC3339Nano, sinceParam)
+		if err != nil {
+			http.Error(w, "invalid since timestamp", http.StatusBadRequest)
+			return
+		}
+	}
+
+	limit := h.batch
+	if limitParam := params.Get("limit"); limitParam != "" {
+		if v, err := strconv.Atoi(limitParam); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	msgs, err := h.svc.History(r.Context(), deviceID, since, convID, limit)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrInvalidRequest) {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	resp := struct {
+		Messages []outboundEnvelope `json:"messages"`
+	}{Messages: make([]outboundEnvelope, 0, len(msgs))}
+
+	for _, m := range msgs {
+		resp.Messages = append(resp.Messages, outboundEnvelope{
+			ID:           m.ID.String(),
+			ConvID:       m.ConvID.String(),
+			FromDeviceID: m.FromDeviceID.String(),
+			ToDeviceID:   m.ToDeviceID.String(),
+			Ciphertext:   base64.StdEncoding.EncodeToString(m.Ciphertext),
+			Header:       append(json.RawMessage(nil), m.Header...),
+			SentAt:       m.SentAt,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {

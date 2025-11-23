@@ -97,6 +97,7 @@ func main() {
 
 	// -------- Message service proxy --------
 	r.Post("/messages/send", messagesProxy.ForwardJSON("/messages/send"))
+	r.Get("/messages/history", messagesProxy.ForwardJSON("/messages/history"))
 	wsHandler := func(w http.ResponseWriter, req *http.Request) {
 		if req.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -16,6 +16,13 @@ import {
   type SessionState,
 } from "../crypto-core";
 import { fromBase64, toBase64, utf8 } from "../crypto-core/utils";
+import {
+  appendMessages,
+  deserializeMessages,
+  latestTimestamp,
+  loadMessages,
+  type PersistedMessage,
+} from "./messageStorage";
 import { getItem, setItem } from "./storage";
 
 export type InboundEnvelope = {
@@ -42,6 +49,13 @@ export type HeaderPayload = {
     nonce: string;
   };
 };
+
+type ByteLike =
+  | string
+  | number[]
+  | ArrayBuffer
+  | Uint8Array
+  | ArrayBufferView;
 
 export type StoredMessagingState = {
   userId: string;
@@ -236,17 +250,21 @@ export class MessagingClient {
 
     await this.save();
 
-    return {
+    const outbound: OutboundMessage = {
       direction: "outbound",
       convId,
       peerDeviceId: toDeviceId,
       plaintext,
       sentAt: new Date(),
     };
+
+    await appendMessages(convId, [serialize(outbound)]);
+
+    return outbound;
   }
 
   async handleEnvelope(env: InboundEnvelope): Promise<InboundMessage> {
-    const ciphertext = fromBase64(env.ciphertext);
+    const ciphertext = toBytes(env.ciphertext);
     const header = payloadToMessageHeader(env.header.ratchet);
 
     let session = this.sessions.get(env.conv_id);
@@ -260,17 +278,21 @@ export class MessagingClient {
     }
 
     const plaintextBytes = Decrypt(session, ciphertext, header);
-    const clear = new TextDecoder().decode(plaintextBytes);
+    const clear = new TextDecoder().decode(toBytes(plaintextBytes));
 
     await this.save();
 
-    return {
+    const inbound: InboundMessage = {
       direction: "inbound",
       convId: env.conv_id,
       peerDeviceId: env.from_device_id,
       plaintext: clear,
       sentAt: new Date(env.sent_at),
     };
+
+    await appendMessages(env.conv_id, [serialize(inbound)]);
+
+    return inbound;
   }
 
   connectWebSocket(
@@ -352,10 +374,54 @@ export class MessagingClient {
     }
     return bundle;
   }
+
+  async fetchHistorySince(
+    convId?: string,
+    since?: Date,
+    limit = 100
+  ): Promise<InboundMessage[]> {
+    const params: Record<string, string> = {
+      device_id: this.state.deviceId,
+      limit: limit.toString(),
+    };
+    if (convId) {
+      params.conv_id = convId;
+    }
+    if (since) {
+      params.since = since.toISOString();
+    }
+
+    const response = await axios.get(`${this.state.messagesBaseUrl}/messages/history`, {
+      params,
+    });
+
+    const payload = response.data as { messages: InboundEnvelope[] };
+    const sorted = (payload.messages ?? []).sort(
+      (a, b) => new Date(a.sent_at).getTime() - new Date(b.sent_at).getTime()
+    );
+
+    const results: InboundMessage[] = [];
+    for (const env of sorted) {
+      const msg = await this.handleEnvelope(env);
+      results.push(msg);
+    }
+
+    await this.save();
+    return results;
+  }
+
+  async loadLocalHistory(convId: string): Promise<(InboundMessage | OutboundMessage)[]> {
+    const stored = await loadMessages(convId);
+    return deserializeMessages(stored);
+  }
+
+  async latestLocalMessage(convId: string): Promise<Date | null> {
+    return latestTimestamp(convId);
+  }
 }
 
-function toUint32Array(b64: string): Uint8Array {
-  const buf = fromBase64(b64);
+function toUint32Array(b64: ByteLike): Uint8Array {
+  const buf = toBytes(b64);
   if (buf.length !== 32) {
     throw new Error(`expected 32 bytes got ${buf.length}`);
   }
@@ -387,6 +453,16 @@ function buildHeaderPayload(
   return payload;
 }
 
+function serialize(msg: InboundMessage | OutboundMessage): PersistedMessage {
+  return {
+    direction: msg.direction,
+    convId: msg.convId,
+    peerDeviceId: msg.peerDeviceId,
+    plaintext: msg.plaintext,
+    sentAt: msg.sentAt.toISOString(),
+  };
+}
+
 function payloadToHandshake(p: HeaderPayload["handshake"]): HandshakeMessage {
   if (!p) {
     throw new Error("nil handshake payload");
@@ -408,13 +484,36 @@ function payloadToMessageHeader(p: HeaderPayload["ratchet"]): MessageHeader {
     p.pn,
     p.n,
     (() => {
-      const nonce = fromBase64(p.nonce);
+      const nonce = toBytes(p.nonce);
       if (nonce.length !== 12) {
         throw new Error(`invalid nonce length ${nonce.length}`);
       }
       return nonce;
     })()
   );
+}
+
+function toBytes(input: ByteLike): Uint8Array {
+  if (typeof input === "string") {
+    return fromBase64(input);
+  }
+  if (input instanceof Uint8Array) {
+    return input;
+  }
+  if (ArrayBuffer.isView(input)) {
+    return new Uint8Array(
+      input.buffer,
+      input.byteOffset,
+      input.byteLength
+    );
+  }
+  if (input instanceof ArrayBuffer) {
+    return new Uint8Array(input);
+  }
+  if (Array.isArray(input)) {
+    return new Uint8Array(input);
+  }
+  throw new Error("unsupported byte input");
 }
 
 function buildWebSocketURL(base: string, deviceId: string): string {

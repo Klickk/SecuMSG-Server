@@ -66,3 +66,15 @@ func (s *Service) MarkDelivered(ctx context.Context, ids []uuid.UUID) error {
 	}
 	return s.store.MarkDelivered(ctx, ids, s.now().UTC())
 }
+
+func (s *Service) History(ctx context.Context, deviceID uuid.UUID, since time.Time, convID uuid.UUID, limit int) ([]store.Message, error) {
+	if deviceID == uuid.Nil {
+		return nil, ErrInvalidRequest
+	}
+	return s.store.History(ctx, store.HistoryFilter{
+		DeviceID: deviceID,
+		ConvID:   convID,
+		Since:    since,
+		Limit:    limit,
+	})
+}

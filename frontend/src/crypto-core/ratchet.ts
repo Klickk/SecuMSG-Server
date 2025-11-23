@@ -51,7 +51,11 @@ export function Decrypt(session: SessionState, ciphertext: Uint8Array, header: M
     const { key, nonce } = deriveCipherParams(skipped);
     const aead = new ChaCha20Poly1305(key);
     try {
-      return aead.open(nonce, ciphertext, header.associatedData());
+      const opened = aead.open(nonce, ciphertext, header.associatedData());
+      if (!opened) {
+        throw ErrDecryptionFailed;
+      }
+      return opened;
     } catch {
       throw ErrDecryptionFailed;
     }
@@ -72,7 +76,11 @@ export function Decrypt(session: SessionState, ciphertext: Uint8Array, header: M
   const { key, nonce } = deriveCipherParams(mk);
   const aead = new ChaCha20Poly1305(key);
   try {
-    return aead.open(nonce, ciphertext, header.associatedData());
+    const opened = aead.open(nonce, ciphertext, header.associatedData());
+    if (!opened) {
+      throw ErrDecryptionFailed;
+    }
+    return opened;
   } catch {
     throw ErrDecryptionFailed;
   }
