@@ -1,7 +1,6 @@
 package http
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -120,7 +119,7 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 			http.Error(w, "invalid userId", http.StatusBadRequest)
 			return
 		}
-		device, err := devices.Register(r.Context(), domain.UserID(userID), req.Name, req.Platform, req.KeyBundle)
+		device, err := devices.Register(r.Context(), domain.UserID(userID), req.Name, req.Platform)
 		if err != nil {
 			writeDeviceError(w, err)
 			return
@@ -139,27 +138,6 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 		writeJSON(w, http.StatusOK, resp)
 	})
 
-	mux.HandleFunc("/v1/devices/rotate-prekeys", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var req dto.RotatePreKeysRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-		deviceID, err := uuid.Parse(strings.TrimSpace(req.DeviceID))
-		if err != nil {
-			http.Error(w, "invalid deviceId", http.StatusBadRequest)
-			return
-		}
-		if err := devices.RotatePreKeys(r.Context(), domain.DeviceID(deviceID), req); err != nil {
-			writeDeviceError(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
 
 	mux.HandleFunc("/v1/devices/revoke", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -181,34 +159,6 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
-	})
-
-	mux.HandleFunc("/v1/devices/allocate-prekey", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var body deviceIDRequest
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "bad request", http.StatusBadRequest)
-			return
-		}
-		deviceID, err := uuid.Parse(strings.TrimSpace(body.DeviceID))
-		if err != nil {
-			http.Error(w, "invalid deviceId", http.StatusBadRequest)
-			return
-		}
-		key, err := devices.AllocateOneTimePreKey(r.Context(), domain.DeviceID(deviceID))
-		if err != nil {
-			writeDeviceError(w, err)
-			return
-		}
-		resp := struct {
-			OneTimePreKey string `json:"oneTimePreKey"`
-		}{
-			OneTimePreKey: base64.StdEncoding.EncodeToString(key),
-		}
-		writeJSON(w, http.StatusOK, resp)
 	})
 
 	return mux

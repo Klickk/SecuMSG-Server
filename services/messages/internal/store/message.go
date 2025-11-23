@@ -52,6 +52,20 @@ func (s *Store) PendingForDevice(ctx context.Context, deviceID uuid.UUID, limit 
 	return msgs, nil
 }
 
+func (s *Store) ConversationsForDevice(ctx context.Context, deviceID uuid.UUID) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	if err := s.db.WithContext(ctx).
+		Model(&Message{}).
+		Distinct().
+		Select("conv_id").
+		Where("to_device_id = ?", deviceID).
+		Order("conv_id asc").
+		Scan(&ids).Error; err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
 type HistoryFilter struct {
 	DeviceID uuid.UUID
 	ConvID   uuid.UUID

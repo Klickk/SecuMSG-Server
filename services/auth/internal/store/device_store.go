@@ -62,24 +62,3 @@ func (d *DeviceStore) RevokeAllForUser(ctx context.Context, userID uuid.UUID) (i
 		Update("revoked_at", time.Now())
 	return tx.RowsAffected, tx.Error
 }
-
-func (d *DeviceStore) UpsertKeyBundle(ctx context.Context, kb *domain.DeviceKeyBundle) error {
-	return d.db.WithContext(ctx).
-		Clauses(onConflictUpdateAllExcept("created_at")). // helper in credential_store.go
-		Create(kb).Error
-}
-
-func (d *DeviceStore) GetKeyBundle(ctx context.Context, deviceID uuid.UUID) (*domain.DeviceKeyBundle, error) {
-	var kb domain.DeviceKeyBundle
-	if err := d.db.WithContext(ctx).First(&kb, "device_id = ?", deviceID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrRecordNotFound
-		}
-		return nil, err
-	}
-	return &kb, nil
-}
-
-func (d *DeviceStore) DeleteKeyBundle(ctx context.Context, deviceID uuid.UUID) error {
-	return d.db.WithContext(ctx).Delete(&domain.DeviceKeyBundle{}, "device_id = ?", deviceID).Error
-}

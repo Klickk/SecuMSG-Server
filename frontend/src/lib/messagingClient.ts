@@ -24,6 +24,7 @@ import {
   type PersistedMessage,
 } from "./messageStorage";
 import { getItem, setItem } from "./storage";
+import { getApiBaseUrl } from "../config/config";
 
 export type InboundEnvelope = {
   id: string;
@@ -50,12 +51,7 @@ export type HeaderPayload = {
   };
 };
 
-type ByteLike =
-  | string
-  | number[]
-  | ArrayBuffer
-  | Uint8Array
-  | ArrayBufferView;
+type ByteLike = string | number[] | ArrayBuffer | Uint8Array | ArrayBufferView;
 
 export type StoredMessagingState = {
   userId: string;
@@ -122,12 +118,6 @@ export class MessagingClient {
       UserID: userId,
       Name: deviceName,
       Platform: navigator.userAgent,
-      KeyBundle: {
-        IdentityKeyPub: toBase64(bundle.IdentityKey),
-        SignedPrekeyPub: toBase64(bundle.SignedPrekey),
-        SignedPrekeySig: toBase64(bundle.SignedPrekeySig),
-        OneTimePrekeys: bundle.OneTimePrekeys.map((x) => x.Public.toString()),
-      },
     };
 
     const authResp = await axios.post(
@@ -187,12 +177,13 @@ export class MessagingClient {
           sessions.set(id, ImportSession(snap));
         }
       }
+      const baseUrl = getApiBaseUrl();
       return new MessagingClient(
         {
           userId: parsed.userId,
           deviceId: parsed.deviceId,
-          keysBaseUrl: parsed.keysBaseUrl,
-          messagesBaseUrl: parsed.messagesBaseUrl,
+          keysBaseUrl: baseUrl,
+          messagesBaseUrl: baseUrl,
         },
         device,
         sessions
@@ -375,6 +366,18 @@ export class MessagingClient {
     return bundle;
   }
 
+  async fetchConversationIds(): Promise<string[]> {
+    const response = await axios.get(
+      `${this.state.messagesBaseUrl}/messages/conversations`,
+      {
+        params: { device_id: this.state.deviceId },
+      }
+    );
+
+    const payload = response.data as { conversations?: string[] };
+    return payload.conversations ?? [];
+  }
+
   async fetchHistorySince(
     convId?: string,
     since?: Date,
@@ -391,9 +394,12 @@ export class MessagingClient {
       params.since = since.toISOString();
     }
 
-    const response = await axios.get(`${this.state.messagesBaseUrl}/messages/history`, {
-      params,
-    });
+    const response = await axios.get(
+      `${this.state.messagesBaseUrl}/messages/history`,
+      {
+        params,
+      }
+    );
 
     const payload = response.data as { messages: InboundEnvelope[] };
     const sorted = (payload.messages ?? []).sort(
@@ -410,7 +416,9 @@ export class MessagingClient {
     return results;
   }
 
-  async loadLocalHistory(convId: string): Promise<(InboundMessage | OutboundMessage)[]> {
+  async loadLocalHistory(
+    convId: string
+  ): Promise<(InboundMessage | OutboundMessage)[]> {
     const stored = await loadMessages(convId);
     return deserializeMessages(stored);
   }
@@ -501,11 +509,7 @@ function toBytes(input: ByteLike): Uint8Array {
     return input;
   }
   if (ArrayBuffer.isView(input)) {
-    return new Uint8Array(
-      input.buffer,
-      input.byteOffset,
-      input.byteLength
-    );
+    return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
   }
   if (input instanceof ArrayBuffer) {
     return new Uint8Array(input);

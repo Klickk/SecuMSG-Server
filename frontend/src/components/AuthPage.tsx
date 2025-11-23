@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { LoginForm } from "./LoginForm";
 import { RegisterForm } from "./RegisterForm";
 import { Register } from "../services/register";
@@ -6,6 +6,7 @@ import { Login } from "../services/login";
 import { useNavigate } from "react-router-dom";
 import { RegisterResponse } from "../types/types";
 import { setItem } from "../lib/storage";
+import { getApiBaseUrl, getServiceHost, setServiceHost } from "../config/config";
 
 type AuthMode = "login" | "register";
 
@@ -13,7 +14,12 @@ export const AuthPage: React.FC = () => {
   const [mode, setMode] = useState<AuthMode>("login");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [serviceHost, setServiceHostInput] = useState(getServiceHost());
   const navigate = useNavigate();
+
+  useEffect(() => {
+    setServiceHost(serviceHost);
+  }, [serviceHost]);
 
   const handleLogin = async (values: { email: string; password: string }) => {
     setIsLoading(true);
@@ -58,6 +64,28 @@ export const AuthPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
+        <div className="mb-4 bg-slate-900/70 border border-slate-800 rounded-2xl p-4 backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm text-slate-300">Service address</p>
+              <p className="text-xs text-slate-500">
+                All services run on this host (ports unchanged).
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-2 w-40">
+              <input
+                className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                value={serviceHost}
+                onChange={(e) => setServiceHostInput(e.target.value)}
+                placeholder="e.g. 192.168.1.50"
+              />
+              <span className="text-[11px] text-slate-500">
+                API: {getApiBaseUrl()}
+              </span>
+            </div>
+          </div>
+        </div>
+
         <div className="bg-slate-900/70 border border-slate-800 rounded-2xl shadow-xl p-8 backdrop-blur">
           <div className="flex justify-between items-center mb-6">
             <div>

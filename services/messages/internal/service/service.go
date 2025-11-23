@@ -78,3 +78,10 @@ func (s *Service) History(ctx context.Context, deviceID uuid.UUID, since time.Ti
 		Limit:    limit,
 	})
 }
+
+func (s *Service) Conversations(ctx context.Context, deviceID uuid.UUID) ([]uuid.UUID, error) {
+	if deviceID == uuid.Nil {
+		return nil, ErrInvalidRequest
+	}
+	return s.store.ConversationsForDevice(ctx, deviceID)
+}

@@ -57,11 +57,14 @@ func main() {
 	// CORS
 	origins := strings.Split(envOr("CORS_ORIGINS", ""), ",")
 	c := cors.Options{
-		AllowedOrigins:   originsIfSet(origins),
-		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Request-Id"},
+		AllowedOrigins: originsIfSet(origins),
+		// Allow any origin (handy for local testing); AllowedOrigins still respected
+		// when you want to lock it down via CORS_ORIGINS.
+		AllowOriginFunc: func(r *http.Request, origin string) bool { return true },
+		AllowedMethods:  []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowedHeaders:  []string{"Authorization", "Content-Type", "X-Request-Id"},
 		AllowCredentials: true,
-		MaxAge:           300,
+		MaxAge:            300,
 	}
 	r.Use(cors.Handler(c))
 	r.Use(chimw.Logger)
@@ -98,6 +101,7 @@ func main() {
 	// -------- Message service proxy --------
 	r.Post("/messages/send", messagesProxy.ForwardJSON("/messages/send"))
 	r.Get("/messages/history", messagesProxy.ForwardJSON("/messages/history"))
+	r.Get("/messages/conversations", messagesProxy.ForwardJSON("/messages/conversations"))
 	wsHandler := func(w http.ResponseWriter, req *http.Request) {
 		if req.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

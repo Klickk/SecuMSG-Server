@@ -69,6 +69,7 @@ func NewRouter(svc *service.Service, poll time.Duration, batch int) http.Handler
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("/messages/send", h.handleSend)
+	mux.HandleFunc("/messages/conversations", h.handleConversations)
 	mux.HandleFunc("/messages/history", h.handleHistory)
 	mux.HandleFunc("/ws", h.handleWS)
 	mux.HandleFunc("/client/init", h.handleClientInit)
@@ -202,6 +203,45 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 			Header:       append(json.RawMessage(nil), m.Header...),
 			SentAt:       m.SentAt,
 		})
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) handleConversations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	deviceParam := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	if deviceParam == "" {
+		http.Error(w, "device_id is required", http.StatusBadRequest)
+		return
+	}
+
+	deviceID, err := uuid.Parse(deviceParam)
+	if err != nil {
+		http.Error(w, "invalid device_id", http.StatusBadRequest)
+		return
+	}
+
+	ids, err := h.svc.Conversations(r.Context(), deviceID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrInvalidRequest) {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	resp := struct {
+		Conversations []string `json:"conversations"`
+	}{Conversations: make([]string, 0, len(ids))}
+
+	for _, id := range ids {
+		resp.Conversations = append(resp.Conversations, id.String())
 	}
 
 	writeJSON(w, http.StatusOK, resp)

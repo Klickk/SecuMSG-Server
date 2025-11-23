@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   InboundMessage,
@@ -24,11 +24,21 @@ export const MessagingPage: React.FC = () => {
   const [contactsInitialized, setContactsInitialized] = useState(false);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [text, setText] = useState<string>("");
-  const [messages, setMessages] = useState<(InboundMessage | OutboundMessage)[]>([]);
-  const [wsStatus, setWsStatus] = useState<string>("Connecting to message stream...");
+  const [messages, setMessages] = useState<
+    (InboundMessage | OutboundMessage)[]
+  >([]);
+  const [wsStatus, setWsStatus] = useState<string>(
+    "Connecting to message stream..."
+  );
   const [showAddContact, setShowAddContact] = useState(false);
   const [newContact, setNewContact] = useState({ deviceId: "", label: "" });
-  const [historyFetched, setHistoryFetched] = useState<Record<string, boolean>>({});
+  const [historyFetched, setHistoryFetched] = useState<Record<string, boolean>>(
+    {}
+  );
+  const [localHistoryLoaded, setLocalHistoryLoaded] = useState(false);
+  const [serverConversationIds, setServerConversationIds] = useState<string[]>(
+    []
+  );
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -43,45 +53,51 @@ export const MessagingPage: React.FC = () => {
       }
       setClient(loaded);
 
-      socket = loaded.connectWebSocket((msg) => {
-        setMessages((prev) => [...prev, msg]);
-        setContacts((prev) => {
-          const existingByConv = prev.find((c) => c.convId === msg.convId);
-          if (existingByConv) {
-            return prev.map((c) =>
-              c.convId === msg.convId
-                ? { ...c, lastActivity: msg.sentAt.toISOString() }
-                : c
+      socket = loaded.connectWebSocket(
+        (msg) => {
+          setMessages((prev) => [...prev, msg]);
+          setContacts((prev) => {
+            const existingByConv = prev.find((c) => c.convId === msg.convId);
+            if (existingByConv) {
+              return prev.map((c) =>
+                c.convId === msg.convId
+                  ? { ...c, lastActivity: msg.sentAt.toISOString() }
+                  : c
+              );
+            }
+
+            const byDeviceIdx = prev.findIndex(
+              (c) => c.deviceId === msg.peerDeviceId
             );
-          }
+            if (byDeviceIdx >= 0) {
+              const clone = [...prev];
+              clone[byDeviceIdx] = {
+                ...clone[byDeviceIdx],
+                convId: msg.convId,
+                lastActivity: msg.sentAt.toISOString(),
+              };
+              return clone;
+            }
 
-          const byDeviceIdx = prev.findIndex((c) => c.deviceId === msg.peerDeviceId);
-          if (byDeviceIdx >= 0) {
-            const clone = [...prev];
-            clone[byDeviceIdx] = {
-              ...clone[byDeviceIdx],
-              convId: msg.convId,
-              lastActivity: msg.sentAt.toISOString(),
-            };
-            return clone;
-          }
-
-          return [
-            ...prev,
-            {
-              deviceId: msg.peerDeviceId,
-              label: `Device ${msg.peerDeviceId.slice(0, 6)}`,
-              convId: msg.convId,
-              lastActivity: msg.sentAt.toISOString(),
-            },
-          ];
-        });
-        setSelectedConvId((prev) => prev ?? msg.convId);
-      }, (state) => {
-        if (state === "open") setWsStatus("Listening for incoming messages");
-        if (state === "closed") setWsStatus("Connection closed");
-        if (state === "error") setWsStatus("Connection error – retry or refresh");
-      });
+            return [
+              ...prev,
+              {
+                deviceId: msg.peerDeviceId,
+                label: `Device ${msg.peerDeviceId.slice(0, 6)}`,
+                convId: msg.convId,
+                lastActivity: msg.sentAt.toISOString(),
+              },
+            ];
+          });
+          setSelectedConvId((prev) => prev ?? msg.convId);
+        },
+        (state) => {
+          if (state === "open") setWsStatus("Listening for incoming messages");
+          if (state === "closed") setWsStatus("Connection closed");
+          if (state === "error")
+            setWsStatus("Connection error – retry or refresh");
+        }
+      );
     })();
 
     return () => {
@@ -91,8 +107,13 @@ export const MessagingPage: React.FC = () => {
   }, [navigate]);
 
   useEffect(() => {
-    if (!client || contacts.length === 0) return;
+    if (!client) return;
+    if (contacts.length === 0) {
+      setLocalHistoryLoaded(true);
+      return;
+    }
     let cancelled = false;
+    setLocalHistoryLoaded(false);
     (async () => {
       const all: (InboundMessage | OutboundMessage)[] = [];
       for (const contact of contacts) {
@@ -102,6 +123,9 @@ export const MessagingPage: React.FC = () => {
       }
       all.sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime());
       setMessages(all);
+      if (!cancelled) {
+        setLocalHistoryLoaded(true);
+      }
     })();
     return () => {
       cancelled = true;
@@ -162,17 +186,55 @@ export const MessagingPage: React.FC = () => {
       .sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime());
   }, [activeContact, messages]);
 
+  const syncHistoryForConversation = useCallback(
+    async (convId: string) => {
+      if (!client) return [] as (InboundMessage | OutboundMessage)[];
+      const last = await client.latestLocalMessage(convId);
+      const since = last ? new Date(last.getTime() + 1000) : undefined;
+      const fetched = await client.fetchHistorySince(convId, since);
+      if (fetched.length === 0) return fetched;
+
+      const mostRecent = fetched[fetched.length - 1];
+
+      setContacts((prev) => {
+        const existing = prev.find((c) => c.convId === convId);
+        if (existing) {
+          return prev.map((c) =>
+            c.convId === convId
+              ? {
+                  ...c,
+                  deviceId: existing.deviceId || mostRecent.peerDeviceId,
+                  lastActivity: mostRecent.sentAt.toISOString(),
+                }
+              : c
+          );
+        }
+
+        return [
+          ...prev,
+          {
+            deviceId: mostRecent.peerDeviceId,
+            label: `Device ${mostRecent.peerDeviceId.slice(0, 6)}`,
+            convId,
+            lastActivity: mostRecent.sentAt.toISOString(),
+          },
+        ];
+      });
+
+      setMessages((prev) => [...prev, ...fetched]);
+      return fetched;
+    },
+    [client]
+  );
+
   useEffect(() => {
     if (!client || !activeContact) return;
+    if (!localHistoryLoaded) return; // wait until local history is available to compute "last"
     if (historyFetched[activeContact.convId]) return;
     let cancelled = false;
     (async () => {
-      const last = activeMessages[activeMessages.length - 1]?.sentAt;
       try {
-        const fetched = await client.fetchHistorySince(activeContact.convId, last);
-        if (!cancelled && fetched.length > 0) {
-          setMessages((prev) => [...prev, ...fetched]);
-        }
+        await syncHistoryForConversation(activeContact.convId);
       } catch (err) {
         console.error("Failed to sync message history", err);
       } finally {
@@ -188,10 +250,68 @@ export const MessagingPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [activeContact?.convId, activeMessages, client, historyFetched]);
+  }, [
+    activeContact?.convId,
+    client,
+    historyFetched,
+    localHistoryLoaded,
+    syncHistoryForConversation,
+  ]);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    console.log("Fetching conversation IDs from server");
+    if (!client) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const ids = await client.fetchConversationIds();
+        if (!cancelled) {
+          setServerConversationIds(ids);
+        }
+      } catch (err) {
+        console.error("Failed to fetch conversations", err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
+
+  useEffect(() => {
+    if (!client || !localHistoryLoaded) return;
+    if (serverConversationIds.length === 0) return;
+
+    let cancelled = false;
+
+    (async () => {
+      for (const convId of serverConversationIds) {
+        if (cancelled) return;
+        if (historyFetched[convId]) continue;
+        try {
+          await syncHistoryForConversation(convId);
+        } catch (err) {
+          console.error("Failed to sync message history", err);
+        }
+        if (!cancelled) {
+          setHistoryFetched((prev) => ({ ...prev, [convId]: true }));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    client,
+    historyFetched,
+    localHistoryLoaded,
+    serverConversationIds,
+    syncHistoryForConversation,
+  ]);
+
+  const sendMessage = async () => {
     if (!client || !activeContact || !text.trim()) return;
     try {
       const outbound = await client.sendMessage(
@@ -214,11 +334,17 @@ export const MessagingPage: React.FC = () => {
     }
   };
 
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await sendMessage();
+  };
+
   const handleAddContact = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newContact.deviceId.trim()) return;
     const convId = defaultConvId();
-    const label = newContact.label.trim() || `Device ${newContact.deviceId.slice(0, 6)}`;
+    const label =
+      newContact.label.trim() || `Device ${newContact.deviceId.slice(0, 6)}`;
     const next: Contact = {
       deviceId: newContact.deviceId.trim(),
       label,
@@ -236,7 +362,9 @@ export const MessagingPage: React.FC = () => {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-semibold">Messages</h1>
-          <p className="text-slate-400 text-sm">{header || "Preparing device..."}</p>
+          <p className="text-slate-400 text-sm">
+            {header || "Preparing device..."}
+          </p>
           <p className="text-xs text-slate-500">{wsStatus}</p>
         </div>
 
@@ -277,7 +405,9 @@ export const MessagingPage: React.FC = () => {
                         : "border-slate-800 bg-slate-900/60 hover:border-slate-700"
                     }`}
                   >
-                    <p className="font-medium text-slate-100">{contact.label}</p>
+                    <p className="font-medium text-slate-100">
+                      {contact.label}
+                    </p>
                     <p className="text-xs text-slate-400">{contact.deviceId}</p>
                     {lastMsg && (
                       <p className="text-xs text-slate-500 mt-1 truncate">
@@ -300,12 +430,18 @@ export const MessagingPage: React.FC = () => {
               <>
                 <div className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
                   <div>
-                    <p className="text-lg font-semibold text-slate-100">{activeContact.label}</p>
-                    <p className="text-xs text-slate-400">Device {activeContact.deviceId}</p>
+                    <p className="text-lg font-semibold text-slate-100">
+                      {activeContact.label}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      Device {activeContact.deviceId}
+                    </p>
                   </div>
                   <div className="text-xs text-slate-500">
                     Conversation ID
-                    <span className="ml-2 text-slate-300">{activeContact.convId}</span>
+                    <span className="ml-2 text-slate-300">
+                      {activeContact.convId}
+                    </span>
                   </div>
                 </div>
 
@@ -325,24 +461,39 @@ export const MessagingPage: React.FC = () => {
                       }`}
                     >
                       <div className="text-[11px] text-slate-300/80 mb-1 flex items-center justify-between gap-4">
-                        <span>{msg.direction === "inbound" ? "Incoming" : "You"}</span>
+                        <span>
+                          {msg.direction === "inbound" ? "Incoming" : "You"}
+                        </span>
                         <span>{msg.sentAt.toLocaleTimeString()}</span>
                       </div>
-                      <p className="whitespace-pre-wrap break-words text-slate-100">{msg.plaintext}</p>
+                      <p className="whitespace-pre-wrap break-words text-slate-100">
+                        {msg.plaintext}
+                      </p>
                     </div>
                   ))}
                 </div>
 
-                <form onSubmit={handleSend} className="border-t border-slate-800 p-4 space-y-3">
+                <form
+                  onSubmit={handleSend}
+                  className="border-t border-slate-800 p-4 space-y-3"
+                >
                   <label className="text-sm text-slate-300">Message</label>
                   <textarea
                     className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 min-h-[96px]"
                     value={text}
                     onChange={(e) => setText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        sendMessage();
+                      }
+                    }}
                     placeholder="Type a secure message"
                   />
                   <div className="flex items-center justify-between">
-                    <p className="text-xs text-slate-500">Messages are end-to-end encrypted.</p>
+                    <p className="text-xs text-slate-500">
+                      Messages are end-to-end encrypted.
+                    </p>
                     <button
                       type="submit"
                       className="px-4 py-2 rounded-lg bg-sky-500 text-slate-900 font-medium hover:bg-sky-400 disabled:opacity-60 disabled:cursor-not-allowed"
@@ -363,7 +514,9 @@ export const MessagingPage: React.FC = () => {
               <div className="flex items-start justify-between">
                 <div>
                   <h2 className="text-xl font-semibold">Add recipient</h2>
-                  <p className="text-sm text-slate-400 mt-1">Enter their device ID to start chatting.</p>
+                  <p className="text-sm text-slate-400 mt-1">
+                    Enter their device ID to start chatting.
+                  </p>
                 </div>
                 <button
                   className="text-slate-400 hover:text-slate-100"
@@ -375,21 +528,35 @@ export const MessagingPage: React.FC = () => {
 
               <form className="space-y-3" onSubmit={handleAddContact}>
                 <div className="space-y-1">
-                  <label className="text-sm text-slate-300">Recipient device ID</label>
+                  <label className="text-sm text-slate-300">
+                    Recipient device ID
+                  </label>
                   <input
                     className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
                     value={newContact.deviceId}
-                    onChange={(e) => setNewContact((prev) => ({ ...prev, deviceId: e.target.value }))}
+                    onChange={(e) =>
+                      setNewContact((prev) => ({
+                        ...prev,
+                        deviceId: e.target.value,
+                      }))
+                    }
                     placeholder="Paste the device ID"
                     required
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-sm text-slate-300">Label (optional)</label>
+                  <label className="text-sm text-slate-300">
+                    Label (optional)
+                  </label>
                   <input
                     className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
                     value={newContact.label}
-                    onChange={(e) => setNewContact((prev) => ({ ...prev, label: e.target.value }))}
+                    onChange={(e) =>
+                      setNewContact((prev) => ({
+                        ...prev,
+                        label: e.target.value,
+                      }))
+                    }
                     placeholder="Alice, Work laptop, ..."
                   />
                 </div>

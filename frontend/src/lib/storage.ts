@@ -1,6 +1,7 @@
 const DB_NAME = "secumsg-storage";
 const STORE_NAME = "kv";
-const DB_VERSION = 1;
+// Increment DB_VERSION whenever we change the schema (e.g., add new stores)
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -23,7 +24,22 @@ async function getDb(): Promise<IDBDatabase> {
       }
     };
 
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      // If the store is missing (e.g., a stale/corrupted DB), recreate the DB.
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.close();
+        const deleteReq = indexedDB.deleteDatabase(DB_NAME);
+        deleteReq.onerror = () => reject(deleteReq.error);
+        deleteReq.onsuccess = () => {
+          dbPromise = null;
+          // Retry opening; the next call will hit onupgradeneeded and create the store.
+          getDb().then(resolve).catch(reject);
+        };
+        return;
+      }
+      resolve(db);
+    };
     request.onerror = () => reject(request.error);
   });
 
@@ -64,4 +80,3 @@ export async function removeItem(key: string): Promise<void> {
     tx.onabort = () => reject(tx.error);
   });
 }
-
