@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"messages/internal/config"
+	"messages/internal/observability/logging"
 	"messages/internal/service"
 	"messages/internal/store"
 	transport "messages/internal/transport/http"
 	"net/http"
+	"os"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -15,16 +17,33 @@ import (
 )
 
 func main() {
+	env := os.Getenv("ENVIRONMENT")
+	if env == "" {
+		env = "dev"
+	}
+
+	logger := logging.NewLogger(logging.Config{
+		ServiceName: "messages",
+		Environment: env,
+		Level:       os.Getenv("LOG_LEVEL"),
+	})
+
+	slog.SetDefault(logger)
+
+	logger.Info("starting service")
+
 	cfg := config.Load()
 
 	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("gorm open: %v", err)
+		logger.Error("gorm open", "error", err)
+		os.Exit(1)
 	}
 
 	st := store.New(db)
 	if err := st.AutoMigrate(context.Background()); err != nil {
-		log.Fatalf("auto migrate: %v", err)
+		logger.Error("auto migrate", "error", err)
+		os.Exit(1)
 	}
 
 	svc := service.New(st)
@@ -36,6 +55,9 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	log.Printf("messages service listening on %s", cfg.Addr)
-	log.Fatal(srv.ListenAndServe())
+	slog.Info("messages service listening", "addr", cfg.Addr)
+	if err := srv.ListenAndServe(); err != nil {
+		logger.Error("server error", "error", err)
+		os.Exit(1)
+	}
 }

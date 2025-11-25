@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -20,7 +20,7 @@ func Load() Config {
 	poll := envDuration("MESSAGES_WS_POLL_MS", 500)
 	batch := envInt("MESSAGES_DELIVERY_BATCH", 50)
 	if batch <= 0 {
-		log.Printf("config: invalid delivery batch %d, defaulting to 50", batch)
+		slog.Warn("config: invalid delivery batch, defaulting", "batch", batch)
 		batch = 50
 	}
 	return Config{
@@ -44,7 +44,7 @@ func envDuration(key string, defaultMillis int) time.Duration {
 		if err == nil && n > 0 {
 			return time.Duration(n) * time.Millisecond
 		}
-		log.Printf("config: invalid %s=%q, using default %dms", key, v, defaultMillis)
+		slog.Warn("config: invalid duration, using default", "key", key, "value", v, "default_ms", defaultMillis)
 	}
 	return time.Duration(defaultMillis) * time.Millisecond
 }
@@ -55,7 +55,7 @@ func envInt(key string, fallback int) int {
 		if err == nil {
 			return n
 		}
-		log.Printf("config: invalid %s=%q, using default %d", key, v, fallback)
+		slog.Warn("config: invalid int, using default", "key", key, "value", v, "default", fallback)
 	}
 	return fallback
 }

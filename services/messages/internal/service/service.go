@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"messages/internal/msgjson"
 	"messages/internal/store"
 	"time"
@@ -46,7 +46,7 @@ func (s *Service) Enqueue(ctx context.Context, in SendInput) (store.Message, err
 		Header:       msgjson.JSON(append([]byte(nil), in.Header...)),
 		SentAt:       s.now().UTC(),
 	}
-	log.Printf("enqueue msg: %+v", msg)
+	slog.Info("enqueue msg", "message", msg)
 	if err := s.store.Create(ctx, &msg); err != nil {
 		return store.Message{}, err
 	}

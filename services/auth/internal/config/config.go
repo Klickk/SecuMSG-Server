@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -60,7 +60,7 @@ func getdur(k string, def time.Duration) time.Duration {
 		if d, err := time.ParseDuration(v); err == nil {
 			return d
 		}
-		log.Printf("WARN: invalid duration %s=%q, using default %s", k, v, def)
+		slog.Warn("invalid duration, using default", "key", k, "value", v, "default", def)
 	}
 	return def
 }
@@ -68,7 +68,8 @@ func getdur(k string, def time.Duration) time.Duration {
 func must(k string) string {
 	v := os.Getenv(k)
 	if v == "" {
-		log.Fatalf("missing required env %s", k)
+		slog.Error("missing required env", "key", k)
+		os.Exit(1)
 	}
 	return v
 }

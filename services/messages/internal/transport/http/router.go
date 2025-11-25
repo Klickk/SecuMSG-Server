@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"messages/internal/service"
 	"net"
 	"net/http"
@@ -264,7 +264,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	ws, err := acceptWebSocket(w, r)
 	if err != nil {
-		log.Printf("ws handshake: %v", err)
+		slog.Error("ws handshake", "error", err)
 		return
 	}
 	defer ws.close()
@@ -303,7 +303,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := sendPending(); err != nil {
-		log.Printf("ws initial send: %v", err)
+		slog.Error("ws initial send", "error", err)
 		return
 	}
 
@@ -316,11 +316,11 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-ticker.C:
 			if err := sendPending(); err != nil {
-				log.Printf("ws send: %v", err)
+				slog.Error("ws send", "error", err)
 				return
 			}
 			if err := ws.writeFrame(opPing, nil); err != nil {
-				log.Printf("ws ping: %v", err)
+				slog.Error("ws ping", "error", err)
 				return
 			}
 		}
