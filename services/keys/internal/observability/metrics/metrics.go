@@ -23,7 +23,7 @@ var (
 
 func MustRegister(serviceName string) {
 	HTTPRequestsTotal = HTTPRequestsTotal.MustCurryWith(prometheus.Labels{"service": serviceName})
-	HTTPRequestDurationSeconds = HTTPRequestDurationSeconds.MustCurryWith(prometheus.Labels{"service": serviceName})
+	HTTPRequestDurationSeconds = HTTPRequestDurationSeconds.MustCurryWith(prometheus.Labels{"service": serviceName}).(*prometheus.HistogramVec)
 
 	prometheus.MustRegister(
 		HTTPRequestsTotal,
