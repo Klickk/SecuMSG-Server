@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"messages/internal/config"
 	"messages/internal/observability/logging"
+	"messages/internal/observability/middleware"
 	"messages/internal/service"
 	"messages/internal/store"
 	transport "messages/internal/transport/http"
@@ -49,9 +50,11 @@ func main() {
 	svc := service.New(st)
 	mux := transport.NewRouter(svc, cfg.WSPollInterval, cfg.DeliveryBatchMax)
 
+	handler := middleware.WithRequestAndTrace(mux)
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

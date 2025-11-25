@@ -18,6 +18,7 @@ import (
 	"gateway/internal/authz"
 	gwmw "gateway/internal/middleware"
 	"gateway/internal/observability/logging"
+	obsmw "gateway/internal/observability/middleware"
 	"gateway/internal/proxy"
 )
 
@@ -56,14 +57,15 @@ func main() {
 	}
 	msgWSProxy := httputil.NewSingleHostReverseProxy(msgWSURL)
 	msgWSProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		slog.Error("gateway websocket proxy error", "error", err)
+		reqID := obsmw.RequestIDFromContext(r.Context())
+		traceID := obsmw.TraceIDFromContext(r.Context())
+		slog.Error("gateway websocket proxy error", "error", err, "request_id", reqID, "trace_id", traceID)
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 	}
 
 	r := chi.NewRouter()
 
 	// --- Middlewares ---
-	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
 	r.Use(TimeoutExceptWS(30 * time.Second))
@@ -79,7 +81,7 @@ func main() {
 		// when you want to lock it down via CORS_ORIGINS.
 		AllowOriginFunc:  func(r *http.Request, origin string) bool { return true },
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Request-Id"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Request-ID", "X-Trace-ID"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}
@@ -161,9 +163,11 @@ func main() {
 		})
 	})
 
+	handler := obsmw.WithRequestAndTrace(r)
+
 	addr := ":8080"
 	slog.Info("gateway listening", "addr", addr)
-	if err := http.ListenAndServe(addr, r); err != nil {
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		logger.Error("server error", "error", err)
 		os.Exit(1)
 	}

@@ -8,6 +8,7 @@ import (
 
 	"keys/internal/config"
 	"keys/internal/observability/logging"
+	"keys/internal/observability/middleware"
 	"keys/internal/service"
 	"keys/internal/store"
 	httptransport "keys/internal/transport/http"
@@ -44,9 +45,11 @@ func main() {
 	svc := service.New(st)
 	mux := httptransport.NewRouter(svc)
 
+	handler := middleware.WithRequestAndTrace(mux)
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

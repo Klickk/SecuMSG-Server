@@ -8,6 +8,7 @@ import (
 
 	"auth/internal/config"
 	"auth/internal/observability/logging"
+	"auth/internal/observability/middleware"
 	impl "auth/internal/service/impl"
 	"auth/internal/store"
 	httpx "auth/internal/transport/http"
@@ -62,9 +63,11 @@ func main() {
 	// 3) HTTP router
 	mux := httpx.NewRouter(as, ds, ts) // if your router needs cfg (CORS, trust proxy), pass it in here
 
+	handler := middleware.WithRequestAndTrace(mux)
+
 	srv := &http.Server{
 		Addr:              cfg.Addr, // e.g. ":8081"
-		Handler:           mux,      // <-- was routes(cfg) (undefined). Use mux.
+		Handler:           handler,  // <-- was routes(cfg) (undefined). Use mux.
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

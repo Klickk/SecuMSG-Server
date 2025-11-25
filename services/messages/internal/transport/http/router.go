@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"messages/internal/observability/middleware"
 	"messages/internal/service"
 	"net"
 	"net/http"
@@ -264,12 +265,16 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	ws, err := acceptWebSocket(w, r)
 	if err != nil {
-		slog.Error("ws handshake", "error", err)
+		reqID := middleware.RequestIDFromContext(r.Context())
+		traceID := middleware.TraceIDFromContext(r.Context())
+		slog.Error("ws handshake", "error", err, "request_id", reqID, "trace_id", traceID)
 		return
 	}
 	defer ws.close()
 
 	ctx := r.Context()
+	reqID := middleware.RequestIDFromContext(ctx)
+	traceID := middleware.TraceIDFromContext(ctx)
 
 	sendPending := func() error {
 		msgs, err := h.svc.Pending(ctx, deviceID, h.batch)
@@ -303,7 +308,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := sendPending(); err != nil {
-		slog.Error("ws initial send", "error", err)
+		slog.Error("ws initial send", "error", err, "request_id", reqID, "trace_id", traceID)
 		return
 	}
 
@@ -316,11 +321,11 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-ticker.C:
 			if err := sendPending(); err != nil {
-				slog.Error("ws send", "error", err)
+				slog.Error("ws send", "error", err, "request_id", reqID, "trace_id", traceID)
 				return
 			}
 			if err := ws.writeFrame(opPing, nil); err != nil {
-				slog.Error("ws ping", "error", err)
+				slog.Error("ws ping", "error", err, "request_id", reqID, "trace_id", traceID)
 				return
 			}
 		}
