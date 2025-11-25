@@ -150,13 +150,13 @@ func (a *AuthServiceImpl) Login(ctx context.Context, r dto.LoginRequest, ip, ua 
 	if r.EmailOrUsername == "" || r.Password == "" {
 		return nil, ErrEmptyCredential
 	}
-
+	
+	var user *domain.User
 	// We might need a tx if we rehash the password (write). Keep it simple: always use WithTx.
 	var tokens *dto.TokenResponse
 
 	err := a.Store.WithTx(ctx, func(tx storeTx) error {
 		// 1) load user by email or username
-		var user *domain.User
 		var err error
 		if looksLikeEmail(r.EmailOrUsername) {
 			user, err = tx.Users().GetByEmail(ctx, r.EmailOrUsername)
@@ -206,7 +206,8 @@ func (a *AuthServiceImpl) Login(ctx context.Context, r dto.LoginRequest, ip, ua 
 		if err != nil {
 			return err
 		}
-		tokens = tr
+		tokens = tr	
+
 		return nil
 	})
 	if err != nil {

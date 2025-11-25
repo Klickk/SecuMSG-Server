@@ -1,4 +1,4 @@
-compose := docker compose -f .docker/docker-compose.dev.yml
+compose := docker compose -f .docker/docker-compose.dev.yml -f .docker/docker-compose.observability.yml
 
 up:
 	$(compose) up --build -d
