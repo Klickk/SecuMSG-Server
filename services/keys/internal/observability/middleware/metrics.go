@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"keys/internal/observability/metrics"
+	keysmetrics "keys/internal/observability/metrics"
 )
 
 type statusRecorder struct {
@@ -36,8 +36,8 @@ func WithMetrics(next http.Handler) http.Handler {
 		method := r.Method
 		statusStr := strconv.Itoa(sr.status)
 
-		metrics.HTTPRequestsTotal.WithLabelValues(method, path, statusStr).Inc()
-		metrics.HTTPRequestDurationSeconds.WithLabelValues(method, path).Observe(duration)
+		keysmetrics.HTTPRequestsTotal.WithLabelValues(method, path, statusStr).Inc()
+		keysmetrics.HTTPRequestDurationSeconds.WithLabelValues(method, path).Observe(duration)
 
 		slog.Default().Debug("request metrics updated",
 			"method", method,
