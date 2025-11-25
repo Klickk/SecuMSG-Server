@@ -3,12 +3,15 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"auth/internal/domain"
 	"auth/internal/dto"
 	"auth/internal/netutil"
+	"auth/internal/observability/metrics"
+	"auth/internal/observability/middleware"
 	"auth/internal/service"
 
 	"github.com/google/uuid"
@@ -52,17 +55,25 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		reqID := middleware.RequestIDFromContext(r.Context())
+		traceID := middleware.TraceIDFromContext(r.Context())
 		var req dto.RegisterRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
+			metrics.AuthRegistrationsTotal.WithLabelValues("failure").Inc()
+			slog.Warn("register decode failed", "error", err, "request_id", reqID, "trace_id", traceID)
 			return
 		}
 		ip := clientIP(r)
 		res, err := auth.Register(r.Context(), req, ip, r.UserAgent())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			metrics.AuthRegistrationsTotal.WithLabelValues("failure").Inc()
+			slog.Warn("register failed", "error", err, "request_id", reqID, "trace_id", traceID)
 			return
 		}
+		metrics.AuthRegistrationsTotal.WithLabelValues("success").Inc()
+		slog.Info("user registered", "user_id", res.UserID, "request_id", reqID, "trace_id", traceID, "has_password", req.Password != "")
 		writeJSON(w, http.StatusOK, res)
 	})
 
@@ -71,17 +82,25 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		reqID := middleware.RequestIDFromContext(r.Context())
+		traceID := middleware.TraceIDFromContext(r.Context())
 		var req dto.LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
+			metrics.AuthLoginsTotal.WithLabelValues("failure").Inc()
+			slog.Warn("login decode failed", "error", err, "request_id", reqID, "trace_id", traceID)
 			return
 		}
 		ip := clientIP(r)
 		res, err := auth.Login(r.Context(), req, ip, r.UserAgent())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
+			metrics.AuthLoginsTotal.WithLabelValues("failure").Inc()
+			slog.Warn("login failed", "error", err, "request_id", reqID, "trace_id", traceID)
 			return
 		}
+		metrics.AuthLoginsTotal.WithLabelValues("success").Inc()
+		slog.Info("login succeeded", "request_id", reqID, "trace_id", traceID)
 		writeJSON(w, http.StatusOK, res)
 	})
 
@@ -91,19 +110,27 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		reqID := middleware.RequestIDFromContext(r.Context())
+		traceID := middleware.TraceIDFromContext(r.Context())
 		var body struct {
 			RefreshToken string `json:"refreshToken"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
+			metrics.TokensIssuedTotal.WithLabelValues("refresh", "failure").Inc()
+			slog.Warn("refresh decode failed", "error", err, "request_id", reqID, "trace_id", traceID)
 			return
 		}
 		ip := clientIP(r)
 		res, err := tokens.Refresh(r.Context(), body.RefreshToken, ip, r.UserAgent())
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
+			metrics.TokensIssuedTotal.WithLabelValues("refresh", "failure").Inc()
+			slog.Warn("token refresh failed", "error", err, "request_id", reqID, "trace_id", traceID)
 			return
 		}
+		metrics.TokensIssuedTotal.WithLabelValues("refresh", "success").Inc()
+		slog.Info("token refresh succeeded", "request_id", reqID, "trace_id", traceID)
 		writeJSON(w, http.StatusOK, res)
 	})
 

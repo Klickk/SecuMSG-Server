@@ -3,12 +3,15 @@ package impl
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
 	"auth/internal/domain"
 	"auth/internal/dto"
 	"auth/internal/netutil"
+	"auth/internal/observability/metrics"
+	"auth/internal/observability/middleware"
 	"auth/internal/store"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -57,6 +60,10 @@ func (t *TokenServiceImpl) Issue(
 	deviceID *domain.DeviceID,
 	ip, ua string,
 ) (*dto.TokenResponse, error) {
+	result := "success"
+	defer func() {
+		metrics.TokensIssuedTotal.WithLabelValues("issue", result).Inc()
+	}()
 	ip = normalizeIP(ip)
 	ua = netutil.TruncateUserAgent(ua)
 	now := time.Now().UTC()
@@ -74,18 +81,25 @@ func (t *TokenServiceImpl) Issue(
 		UserAgent: ua,
 	}
 	if err := t.store.Sessions().Create(ctx, sess); err != nil {
+		result = "failure"
 		return nil, err
 	}
 
 	// 2) sign access + refresh
 	access, err := t.signAccess(user.ID, sess, now)
 	if err != nil {
+		result = "failure"
 		return nil, err
 	}
 	refresh, err := t.signRefresh(user.ID, sess, now)
 	if err != nil {
+		result = "failure"
 		return nil, err
 	}
+
+	reqID := middleware.RequestIDFromContext(ctx)
+	traceID := middleware.TraceIDFromContext(ctx)
+	slog.Info("issued tokens", "session_id", sess.ID, "user_id", user.ID, "device_id", deviceID, "request_id", reqID, "trace_id", traceID)
 
 	return &dto.TokenResponse{
 		AccessToken:  access,
@@ -96,6 +110,10 @@ func (t *TokenServiceImpl) Issue(
 
 // Refresh validates the refresh JWT, checks session state, rotates refresh id, and returns new tokens.
 func (t *TokenServiceImpl) Refresh(ctx context.Context, refreshToken string, ip, ua string) (*dto.TokenResponse, error) {
+	result := "success"
+	defer func() {
+		metrics.TokensIssuedTotal.WithLabelValues("refresh", result).Inc()
+	}()
 	ip = normalizeIP(ip)
 	ua = netutil.TruncateUserAgent(ua)
 	now := time.Now().UTC()
@@ -103,15 +121,18 @@ func (t *TokenServiceImpl) Refresh(ctx context.Context, refreshToken string, ip,
 	// 1) parse & validate refresh JWT
 	parsed, claims, err := t.parseRefresh(refreshToken)
 	if err != nil || !parsed.Valid {
+		result = "failure"
 		return nil, errors.New("invalid token")
 	}
 
 	// 2) lookup session by refresh_id (claims.ID) and validate state
 	sess, err := t.store.Sessions().GetByRefreshID(ctx, uuid.MustParse(claims.ID))
 	if err != nil {
+		result = "failure"
 		return nil, errors.New("invalid token")
 	}
 	if sess.RevokedAt != nil || now.After(sess.ExpiresAt) {
+		result = "failure"
 		return nil, errors.New("session expired or revoked")
 	}
 
@@ -121,6 +142,7 @@ func (t *TokenServiceImpl) Refresh(ctx context.Context, refreshToken string, ip,
 	newRID := uuid.New()
 	newExp := now.Add(t.cfg.RefreshTTL)
 	if err := t.store.Sessions().Rotate(ctx, sess.ID, newRID, newExp, ip, ua); err != nil {
+		result = "failure"
 		return nil, err
 	}
 	sess.RefreshID = newRID
@@ -131,12 +153,18 @@ func (t *TokenServiceImpl) Refresh(ctx context.Context, refreshToken string, ip,
 	// 4) mint new access+refresh
 	accessJWT, err := t.signAccess(sess.UserID, sess, now)
 	if err != nil {
+		result = "failure"
 		return nil, err
 	}
 	refreshJWT, err := t.signRefresh(sess.UserID, sess, now)
 	if err != nil {
+		result = "failure"
 		return nil, err
 	}
+
+	reqID := middleware.RequestIDFromContext(ctx)
+	traceID := middleware.TraceIDFromContext(ctx)
+	slog.Info("refreshed tokens", "session_id", sess.ID, "user_id", sess.UserID, "request_id", reqID, "trace_id", traceID)
 
 	return &dto.TokenResponse{
 		AccessToken:  accessJWT,
