@@ -46,6 +46,30 @@ async function getDb(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
+export async function wipeDatabaseIfExists(): Promise<void> {
+  if (typeof indexedDB === "undefined") {
+    return;
+  }
+
+  // Close existing handles so deletion is not blocked.
+  if (dbPromise) {
+    try {
+      const existing = await dbPromise;
+      existing.close();
+    } catch {
+      // Ignore—if the previous open failed, we still want to retry deletion.
+    }
+  }
+  dbPromise = null;
+
+  await new Promise<void>((resolve, reject) => {
+    const deleteReq = indexedDB.deleteDatabase(DB_NAME);
+    deleteReq.onerror = () => reject(deleteReq.error);
+    deleteReq.onblocked = () => resolve();
+    deleteReq.onsuccess = () => resolve();
+  });
+}
+
 export async function setItem(key: string, value: string): Promise<void> {
   const db = await getDb();
   await new Promise<void>((resolve, reject) => {

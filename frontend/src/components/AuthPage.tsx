@@ -5,7 +5,7 @@ import { Register } from "../services/register";
 import { Login } from "../services/login";
 import { useNavigate } from "react-router-dom";
 import { RegisterResponse } from "../types/types";
-import { setItem } from "../lib/storage";
+import { setItem, wipeDatabaseIfExists } from "../lib/storage";
 import { getApiBaseUrl, getServiceHost, setServiceHost } from "../config/config";
 
 type AuthMode = "login" | "register";
@@ -49,6 +49,7 @@ export const AuthPage: React.FC = () => {
           setError("Registration failed. Please try again.");
         } else {
           const resp: RegisterResponse = success as RegisterResponse;
+          await wipeDatabaseIfExists();
           await setItem("userId", resp.userId);
           navigate("/dRegister");
           console.log("Registration successful");
