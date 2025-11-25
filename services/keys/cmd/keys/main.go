@@ -8,6 +8,7 @@ import (
 
 	"keys/internal/config"
 	"keys/internal/observability/logging"
+	"keys/internal/observability/metrics"
 	"keys/internal/observability/middleware"
 	"keys/internal/service"
 	"keys/internal/store"
@@ -30,6 +31,7 @@ func main() {
 	})
 
 	slog.SetDefault(logger)
+	metrics.MustRegister("keys")
 
 	logger.Info("starting service")
 
@@ -45,7 +47,7 @@ func main() {
 	svc := service.New(st)
 	mux := httptransport.NewRouter(svc)
 
-	handler := middleware.WithRequestAndTrace(mux)
+	handler := middleware.WithRequestAndTrace(middleware.WithMetrics(mux))
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,

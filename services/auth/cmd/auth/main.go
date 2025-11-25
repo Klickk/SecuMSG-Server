@@ -8,6 +8,7 @@ import (
 
 	"auth/internal/config"
 	"auth/internal/observability/logging"
+	"auth/internal/observability/metrics"
 	"auth/internal/observability/middleware"
 	impl "auth/internal/service/impl"
 	"auth/internal/store"
@@ -30,6 +31,7 @@ func main() {
 	})
 
 	slog.SetDefault(logger)
+	metrics.MustRegister("auth")
 
 	logger.Info("starting service")
 
@@ -63,7 +65,7 @@ func main() {
 	// 3) HTTP router
 	mux := httpx.NewRouter(as, ds, ts) // if router needs cfg (CORS, trust proxy), pass it in here
 
-	handler := middleware.WithRequestAndTrace(mux)
+	handler := middleware.WithRequestAndTrace(middleware.WithMetrics(mux))
 
 	srv := &http.Server{
 		Addr:              cfg.Addr, // e.g. ":8081"

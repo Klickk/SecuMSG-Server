@@ -14,6 +14,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.4.2
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
+	github.com/prometheus/client_golang v1.18.0
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 )

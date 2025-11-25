@@ -12,6 +12,7 @@ import (
 	"auth/internal/service"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func clientIP(r *http.Request) string {
@@ -43,6 +44,8 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+
+	mux.Handle("/metrics", promhttp.Handler())
 
 	mux.HandleFunc("/v1/auth/register", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -137,7 +140,6 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 		}
 		writeJSON(w, http.StatusOK, resp)
 	})
-
 
 	mux.HandleFunc("/v1/devices/revoke", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

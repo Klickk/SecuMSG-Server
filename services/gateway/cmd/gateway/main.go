@@ -14,10 +14,12 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-chi/httprate"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"gateway/internal/authz"
 	gwmw "gateway/internal/middleware"
 	"gateway/internal/observability/logging"
+	"gateway/internal/observability/metrics"
 	obsmw "gateway/internal/observability/middleware"
 	"gateway/internal/proxy"
 )
@@ -35,6 +37,7 @@ func main() {
 	})
 
 	slog.SetDefault(logger)
+	metrics.MustRegister("gateway")
 
 	logger.Info("starting service")
 
@@ -96,6 +99,8 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+
+	r.Handle("/metrics", promhttp.Handler())
 
 	// -------- Public auth endpoints (pass-through to Auth) --------
 	r.Route("/auth", func(r chi.Router) {
@@ -163,7 +168,7 @@ func main() {
 		})
 	})
 
-	handler := obsmw.WithRequestAndTrace(r)
+	handler := obsmw.WithRequestAndTrace(obsmw.WithMetrics(r))
 
 	addr := ":8080"
 	slog.Info("gateway listening", "addr", addr)

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"messages/internal/config"
 	"messages/internal/observability/logging"
+	"messages/internal/observability/metrics"
 	"messages/internal/observability/middleware"
 	"messages/internal/service"
 	"messages/internal/store"
@@ -30,6 +31,7 @@ func main() {
 	})
 
 	slog.SetDefault(logger)
+	metrics.MustRegister("messages")
 
 	logger.Info("starting service")
 
@@ -50,7 +52,7 @@ func main() {
 	svc := service.New(st)
 	mux := transport.NewRouter(svc, cfg.WSPollInterval, cfg.DeliveryBatchMax)
 
-	handler := middleware.WithRequestAndTrace(mux)
+	handler := middleware.WithRequestAndTrace(middleware.WithMetrics(mux))
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,

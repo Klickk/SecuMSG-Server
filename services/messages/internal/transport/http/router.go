@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Handler struct {
@@ -69,6 +70,7 @@ func NewRouter(svc *service.Service, poll time.Duration, batch int) http.Handler
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/messages/send", h.handleSend)
 	mux.HandleFunc("/messages/conversations", h.handleConversations)
 	mux.HandleFunc("/messages/history", h.handleHistory)
