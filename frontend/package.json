@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare:wasm": "node scripts/prepare-wasm.mjs",
+    "prepare:wasm": "echo \"Skipping wasm build; using TS crypto-core\"",
     "predev": "npm run prepare:wasm",
     "prebuild": "npm run prepare:wasm",
     "dev": "vite",
@@ -14,10 +14,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@noble/curves": "^1.6.0",
+    "@noble/hashes": "^1.5.0",
+    "@stablelib/chacha20poly1305": "^1.0.1",
+    "@tailwindcss/vite": "^4.1.17",
+    "axios": "^1.13.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.9.6",
+    "tailwindcss": "^4.1.17"
   },
   "devDependencies": {
+    "@types/node": "^24.10.1",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

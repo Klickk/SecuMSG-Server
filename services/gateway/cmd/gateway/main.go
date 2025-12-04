@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -14,13 +14,33 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/go-chi/httprate"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"gateway/internal/authz"
 	gwmw "gateway/internal/middleware"
+	"gateway/internal/observability/logging"
+	"gateway/internal/observability/metrics"
+	obsmw "gateway/internal/observability/middleware"
 	"gateway/internal/proxy"
 )
 
 func main() {
+	env := os.Getenv("ENVIRONMENT")
+	if env == "" {
+		env = "dev"
+	}
+
+	logger := logging.NewLogger(logging.Config{
+		ServiceName: "gateway",
+		Environment: env,
+		Level:       os.Getenv("LOG_LEVEL"),
+	})
+
+	slog.SetDefault(logger)
+	metrics.MustRegister("gateway")
+
+	logger.Info("starting service")
+
 	authBase := envOr("AUTH_BASE_URL", "http://localhost:8081")
 	keysBase := envOr("KEYS_BASE_URL", "http://localhost:8082")
 	messagesBase := envOr("MESSAGES_BASE_URL", "http://localhost:8084")
@@ -35,18 +55,20 @@ func main() {
 
 	msgWSURL, err := url.Parse(messagesBase)
 	if err != nil {
-		log.Fatalf("invalid MESSAGES_BASE_URL: %v", err)
+		logger.Error("invalid MESSAGES_BASE_URL", "error", err)
+		os.Exit(1)
 	}
 	msgWSProxy := httputil.NewSingleHostReverseProxy(msgWSURL)
 	msgWSProxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		log.Printf("gateway: websocket proxy error: %v", err)
+		reqID := obsmw.RequestIDFromContext(r.Context())
+		traceID := obsmw.TraceIDFromContext(r.Context())
+		slog.Error("gateway websocket proxy error", "error", err, "request_id", reqID, "trace_id", traceID)
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 	}
 
 	r := chi.NewRouter()
 
 	// --- Middlewares ---
-	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
 	r.Use(TimeoutExceptWS(30 * time.Second))
@@ -57,9 +79,12 @@ func main() {
 	// CORS
 	origins := strings.Split(envOr("CORS_ORIGINS", ""), ",")
 	c := cors.Options{
-		AllowedOrigins:   originsIfSet(origins),
+		AllowedOrigins: originsIfSet(origins),
+		// Allow any origin (handy for local testing); AllowedOrigins still respected
+		// when you want to lock it down via CORS_ORIGINS.
+		AllowOriginFunc:  func(r *http.Request, origin string) bool { return true },
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Request-Id"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Request-ID", "X-Trace-ID"},
 		AllowCredentials: true,
 		MaxAge:           300,
 	}
@@ -75,11 +100,19 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	r.Handle("/metrics", promhttp.Handler())
+
 	// -------- Public auth endpoints (pass-through to Auth) --------
 	r.Route("/auth", func(r chi.Router) {
 		r.Post("/register", p.ForwardJSON("/v1/auth/register"))
 		r.Post("/login", p.ForwardJSON("/v1/auth/login"))
 		r.Post("/refresh", p.ForwardJSON("/v1/auth/refresh"))
+		r.Route("/devices", func(r chi.Router) {
+			r.Post("/register", p.ForwardJSON("/v1/devices/register"))
+			r.Post("/rotate-prekeys", p.ForwardJSON("/v1/devices/rotate-prekeys"))
+			r.Post("/revoke", p.ForwardJSON("/v1/devices/revoke"))
+			r.Post("/allocate-prekey", p.ForwardJSON("/v1/devices/allocate-prekey"))
+		})
 	})
 
 	// -------- Key service proxy --------
@@ -91,6 +124,8 @@ func main() {
 
 	// -------- Message service proxy --------
 	r.Post("/messages/send", messagesProxy.ForwardJSON("/messages/send"))
+	r.Get("/messages/history", messagesProxy.ForwardJSON("/messages/history"))
+	r.Get("/messages/conversations", messagesProxy.ForwardJSON("/messages/conversations"))
 	wsHandler := func(w http.ResponseWriter, req *http.Request) {
 		if req.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -105,14 +140,15 @@ func main() {
 	// choose validator: HS256 shared secret (if provided) else JWKS
 	var authMW func(http.Handler) http.Handler
 	if sharedHS != "" {
-		log.Println("gateway: using HS256 shared-secret token validation")
+		slog.Info("gateway using HS256 shared-secret token validation")
 		hv := authz.NewHMACValidator(sharedHS, issuer)
 		authMW = hv.Middleware
 	} else {
-		log.Printf("gateway: using JWKS at %s", jwksURL)
+		slog.Info("gateway using JWKS", "jwks_url", jwksURL)
 		jv, err := authz.NewJWTValidator(context.Background(), jwksURL, issuer)
 		if err != nil {
-			log.Fatalf("failed to init JWT validator: %v", err)
+			slog.Error("failed to init JWT validator", "error", err)
+			os.Exit(1)
 		}
 		authMW = jv.Middleware
 	}
@@ -132,9 +168,14 @@ func main() {
 		})
 	})
 
+	handler := obsmw.WithRequestAndTrace(obsmw.WithMetrics(r))
+
 	addr := ":8080"
-	log.Printf("gateway listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, r))
+	slog.Info("gateway listening", "addr", addr)
+	if err := http.ListenAndServe(addr, handler); err != nil {
+		logger.Error("server error", "error", err)
+		os.Exit(1)
+	}
 }
 
 func envOr(k, def string) string {

@@ -1,4 +1,4 @@
-compose := docker compose -f .docker/docker-compose.dev.yml
+compose := docker compose -f .docker/docker-compose.dev.yml -f .docker/docker-compose.observability.yml
 
 up:
 	$(compose) up --build -d
@@ -7,6 +7,9 @@ logs:
 	$(compose) logs -f gateway auth keys messages
 
 down:
+	$(compose) down
+
+down-clean:
 	$(compose) down -v
 
 # Manually re-run migrations (optional helper)

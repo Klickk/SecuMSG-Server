@@ -1,11 +1,15 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"keys/internal/config"
+	"keys/internal/observability/logging"
+	"keys/internal/observability/metrics"
+	"keys/internal/observability/middleware"
 	"keys/internal/service"
 	"keys/internal/store"
 	httptransport "keys/internal/transport/http"
@@ -15,23 +19,45 @@ import (
 )
 
 func main() {
+	env := os.Getenv("ENVIRONMENT")
+	if env == "" {
+		env = "dev"
+	}
+
+	logger := logging.NewLogger(logging.Config{
+		ServiceName: "keys",
+		Environment: env,
+		Level:       os.Getenv("LOG_LEVEL"),
+	})
+
+	slog.SetDefault(logger)
+	metrics.MustRegister("keys")
+
+	logger.Info("starting service")
+
 	cfg := config.Load()
 
 	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("gorm open: %v", err)
+		logger.Error("gorm open", "error", err)
+		os.Exit(1)
 	}
 
 	st := store.New(db)
 	svc := service.New(st)
 	mux := httptransport.NewRouter(svc)
 
+	handler := middleware.WithRequestAndTrace(middleware.WithMetrics(mux))
+
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           mux,
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	log.Printf("keys service listening on %s", cfg.Addr)
-	log.Fatal(srv.ListenAndServe())
+	slog.Info("keys service listening", "addr", cfg.Addr)
+	if err := srv.ListenAndServe(); err != nil {
+		logger.Error("server error", "error", err)
+		os.Exit(1)
+	}
 }

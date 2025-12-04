@@ -8,15 +8,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
+	"messages/internal/observability/middleware"
 	"messages/internal/service"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Handler struct {
@@ -67,7 +70,10 @@ func NewRouter(svc *service.Service, poll time.Duration, batch int) http.Handler
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/messages/send", h.handleSend)
+	mux.HandleFunc("/messages/conversations", h.handleConversations)
+	mux.HandleFunc("/messages/history", h.handleHistory)
 	mux.HandleFunc("/ws", h.handleWS)
 	mux.HandleFunc("/client/init", h.handleClientInit)
 	mux.HandleFunc("/client/send", h.handleClientSend)
@@ -133,6 +139,117 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, resp)
 }
 
+func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	params := r.URL.Query()
+	deviceParam := params.Get("device_id")
+	if deviceParam == "" {
+		http.Error(w, "device_id is required", http.StatusBadRequest)
+		return
+	}
+	deviceID, err := uuid.Parse(deviceParam)
+	if err != nil {
+		http.Error(w, "invalid device_id", http.StatusBadRequest)
+		return
+	}
+
+	var convID uuid.UUID
+	if convParam := params.Get("conv_id"); convParam != "" {
+		convID, err = uuid.Parse(convParam)
+		if err != nil {
+			http.Error(w, "invalid conv_id", http.StatusBadRequest)
+			return
+		}
+	}
+
+	var since time.Time
+	if sinceParam := params.Get("since"); sinceParam != "" {
+		since, err = time.Parse(time.RFC3339Nano, sinceParam)
+		if err != nil {
+			http.Error(w, "invalid since timestamp", http.StatusBadRequest)
+			return
+		}
+	}
+
+	limit := h.batch
+	if limitParam := params.Get("limit"); limitParam != "" {
+		if v, err := strconv.Atoi(limitParam); err == nil && v > 0 {
+			limit = v
+		}
+	}
+
+	msgs, err := h.svc.History(r.Context(), deviceID, since, convID, limit)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrInvalidRequest) {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	resp := struct {
+		Messages []outboundEnvelope `json:"messages"`
+	}{Messages: make([]outboundEnvelope, 0, len(msgs))}
+
+	for _, m := range msgs {
+		resp.Messages = append(resp.Messages, outboundEnvelope{
+			ID:           m.ID.String(),
+			ConvID:       m.ConvID.String(),
+			FromDeviceID: m.FromDeviceID.String(),
+			ToDeviceID:   m.ToDeviceID.String(),
+			Ciphertext:   base64.StdEncoding.EncodeToString(m.Ciphertext),
+			Header:       append(json.RawMessage(nil), m.Header...),
+			SentAt:       m.SentAt,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) handleConversations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	deviceParam := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	if deviceParam == "" {
+		http.Error(w, "device_id is required", http.StatusBadRequest)
+		return
+	}
+
+	deviceID, err := uuid.Parse(deviceParam)
+	if err != nil {
+		http.Error(w, "invalid device_id", http.StatusBadRequest)
+		return
+	}
+
+	ids, err := h.svc.Conversations(r.Context(), deviceID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrInvalidRequest) {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	resp := struct {
+		Conversations []string `json:"conversations"`
+	}{Conversations: make([]string, 0, len(ids))}
+
+	for _, id := range ids {
+		resp.Conversations = append(resp.Conversations, id.String())
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
 func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -150,12 +267,16 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	ws, err := acceptWebSocket(w, r)
 	if err != nil {
-		log.Printf("ws handshake: %v", err)
+		reqID := middleware.RequestIDFromContext(r.Context())
+		traceID := middleware.TraceIDFromContext(r.Context())
+		slog.Error("ws handshake", "error", err, "request_id", reqID, "trace_id", traceID)
 		return
 	}
 	defer ws.close()
 
 	ctx := r.Context()
+	reqID := middleware.RequestIDFromContext(ctx)
+	traceID := middleware.TraceIDFromContext(ctx)
 
 	sendPending := func() error {
 		msgs, err := h.svc.Pending(ctx, deviceID, h.batch)
@@ -189,7 +310,7 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := sendPending(); err != nil {
-		log.Printf("ws initial send: %v", err)
+		slog.Error("ws initial send", "error", err, "request_id", reqID, "trace_id", traceID)
 		return
 	}
 
@@ -202,11 +323,11 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			return
 		case <-ticker.C:
 			if err := sendPending(); err != nil {
-				log.Printf("ws send: %v", err)
+				slog.Error("ws send", "error", err, "request_id", reqID, "trace_id", traceID)
 				return
 			}
 			if err := ws.writeFrame(opPing, nil); err != nil {
-				log.Printf("ws ping: %v", err)
+				slog.Error("ws ping", "error", err, "request_id", reqID, "trace_id", traceID)
 				return
 			}
 		}

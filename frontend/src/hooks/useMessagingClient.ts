@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadWasmClient, WasmClient, WasmStateInfo } from '../lib/wasmClient';
+import { getItem, removeItem, setItem } from '../lib/storage';
 
 export interface RegistrationForm {
   keysUrl: string;
@@ -58,12 +59,19 @@ export function useMessagingClient() {
   const clientRef = useRef<WasmClient | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+    let cancelled = false;
+    (async () => {
+      const saved = await getItem(STORAGE_KEY);
+      if (cancelled || !saved) {
+        return;
+      }
       setState(saved);
       stateRef.current = saved;
       setInfo(extractStateInfo(saved));
-    }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -109,10 +117,10 @@ export function useMessagingClient() {
   }, []);
 
   const persistState = useCallback(
-    (value: string) => {
+    async (value: string) => {
       stateRef.current = value;
       setState(value);
-      localStorage.setItem(STORAGE_KEY, value);
+      await setItem(STORAGE_KEY, value);
       updateInfo(value);
     },
     [updateInfo]
@@ -130,7 +138,7 @@ export function useMessagingClient() {
         deviceId: form.deviceId?.trim()
       };
       const result = await clientRef.current.init(payload);
-      persistState(result.state);
+      await persistState(result.state);
       setMessages([]);
       return {
         state: result.state,
@@ -144,10 +152,10 @@ export function useMessagingClient() {
     [persistState]
   );
 
-  const reset = useCallback(() => {
+  const reset = useCallback(async () => {
     setState(null);
     stateRef.current = null;
-    localStorage.removeItem(STORAGE_KEY);
+    await removeItem(STORAGE_KEY);
     setInfo(null);
     setMessages([]);
     if (listener.websocket) {
@@ -171,7 +179,7 @@ export function useMessagingClient() {
         plaintext: form.message
       });
       await postEncryptedMessage(info.messagesUrl, result.request);
-      persistState(result.state);
+      await persistState(result.state);
     },
     [info, persistState]
   );
@@ -213,7 +221,7 @@ export function useMessagingClient() {
           state: stateRef.current,
           envelope
         });
-        persistState(response.state);
+        await persistState(response.state);
         const record: MessageRecord = {
           id: envelope.id,
           convId: envelope.conv_id,

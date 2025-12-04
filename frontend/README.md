@@ -21,4 +21,4 @@ The `predev` and `prebuild` scripts automatically compile the WebAssembly module
 npm run prepare:wasm
 ```
 
-The development server runs on http://localhost:5173 by default. Ensure the key and messaging services are reachable from the browser and that CORS permits the origin. The application persists client state in `localStorage` under the key `secumsg-state-v1`. Use the **Reset state** button to clear stored credentials.
+The development server runs on http://localhost:5173 by default. Ensure the key and messaging services are reachable from the browser and that CORS permits the origin. The application persists client state in IndexedDB under the key `secumsg-state-v1`. Use the **Reset state** button to clear stored credentials.

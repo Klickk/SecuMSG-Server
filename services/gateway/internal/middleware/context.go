@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	obsmw "gateway/internal/observability/middleware"
+
 	"github.com/google/uuid"
 )
 
@@ -12,11 +14,19 @@ type CtxSubKey struct{}
 func PropagateRequestID() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		fn := func(w http.ResponseWriter, r *http.Request) {
-			id := r.Header.Get("X-Request-Id")
+			id := obsmw.RequestIDFromContext(r.Context())
+			if id == "" {
+				id = r.Header.Get("X-Request-ID")
+			}
 			if id == "" {
 				id = uuid.NewString()
 			}
-			w.Header().Set("X-Request-Id", id)
+			w.Header().Set("X-Request-ID", id)
+
+			traceID := obsmw.TraceIDFromContext(r.Context())
+			if traceID != "" {
+				w.Header().Set("X-Trace-ID", traceID)
+			}
 			next.ServeHTTP(w, r)
 		}
 		return http.HandlerFunc(fn)

@@ -4,12 +4,14 @@ package proxy
 import (
 	"bytes"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	obsmw "gateway/internal/observability/middleware"
 )
 
 type Client struct {
@@ -38,6 +40,9 @@ func New(baseURL string, timeout time.Duration) *Client {
 // and logs upstream status/duration. It does NOT log request bodies (to avoid password leaks).
 func (c *Client) ForwardJSON(path string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		reqID := obsmw.RequestIDFromContext(r.Context())
+		traceID := obsmw.TraceIDFromContext(r.Context())
+
 		start := time.Now()
 		upURL := c.baseURL + path
 		if qs := r.URL.RawQuery; qs != "" {
@@ -68,9 +73,12 @@ func (c *Client) ForwardJSON(path string) http.HandlerFunc {
 			req.Header.Set("Content-Type", "application/json")
 		}
 
-		// Propagate request id if present
-		if rid := r.Header.Get("X-Request-Id"); rid != "" {
-			req.Header.Set("X-Request-Id", rid)
+		// Propagate request id / trace id if present
+		if reqID != "" {
+			req.Header.Set("X-Request-ID", reqID)
+		}
+		if traceID != "" {
+			req.Header.Set("X-Trace-ID", traceID)
 		}
 
 		// Real client IP (append to X-Forwarded-For)
@@ -117,9 +125,16 @@ func (c *Client) ForwardJSON(path string) http.HandlerFunc {
 
 		// Log a concise line for observability
 		dur := time.Since(start)
-		rid := r.Header.Get("X-Request-Id")
-		log.Printf("proxy %-6s %s -> %s %d in %v rid=%s ct=%s",
-			r.Method, r.URL.RequestURI(), path, resp.StatusCode, dur, rid, r.Header.Get("Content-Type"))
+		slog.Info("proxy request",
+			"method", r.Method,
+			"path", r.URL.RequestURI(),
+			"upstream_path", path,
+			"status", resp.StatusCode,
+			"duration", dur,
+			"request_id", reqID,
+			"trace_id", traceID,
+			"content_type", r.Header.Get("Content-Type"),
+		)
 
 		// Debug: log a snippet of the upstream error body
 		if resp.StatusCode >= 400 && c.debug && len(bodyBuf) > 0 {
@@ -127,7 +142,7 @@ func (c *Client) ForwardJSON(path string) http.HandlerFunc {
 			if len(trim) > 500 {
 				trim = trim[:500] + "…(truncated)"
 			}
-			log.Printf("proxy upstream body (status=%d, rid=%s): %q", resp.StatusCode, rid, trim)
+			slog.Info("proxy upstream body", "status", resp.StatusCode, "request_id", reqID, "trace_id", traceID, "body", trim)
 		}
 	}
 }

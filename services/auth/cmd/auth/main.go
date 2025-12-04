@@ -1,11 +1,15 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"auth/internal/config"
+	"auth/internal/observability/logging"
+	"auth/internal/observability/metrics"
+	"auth/internal/observability/middleware"
 	impl "auth/internal/service/impl"
 	"auth/internal/store"
 	httpx "auth/internal/transport/http"
@@ -15,13 +19,30 @@ import (
 )
 
 func main() {
+	env := os.Getenv("ENVIRONMENT")
+	if env == "" {
+		env = "dev"
+	}
+
+	logger := logging.NewLogger(logging.Config{
+		ServiceName: "auth",
+		Environment: env,
+		Level:       os.Getenv("LOG_LEVEL"),
+	})
+
+	slog.SetDefault(logger)
+	metrics.MustRegister("auth")
+
+	logger.Info("starting service")
+
 	cfg := config.Load()
 
 	// 1) DB (read from env, not hardcoded)
 	dsn := cfg.DatabaseURL
 	gdb, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatalf("gorm open: %v", err)
+		logger.Error("gorm open", "error", err)
+		os.Exit(1)
 	}
 
 	st := &store.Store{DB: gdb}
@@ -39,16 +60,22 @@ func main() {
 	}, st)
 
 	as := impl.NewAuthServiceImpl(st, pw, ts)
+	ds := impl.NewDeviceServiceImpl(st)
 
 	// 3) HTTP router
-	mux := httpx.NewRouter(as, ts) // if your router needs cfg (CORS, trust proxy), pass it in here
+	mux := httpx.NewRouter(as, ds, ts) // if router needs cfg (CORS, trust proxy), pass it in here
+
+	handler := middleware.WithRequestAndTrace(middleware.WithMetrics(mux))
 
 	srv := &http.Server{
 		Addr:              cfg.Addr, // e.g. ":8081"
-		Handler:           mux,      // <-- was routes(cfg) (undefined). Use mux.
+		Handler:           handler,  // <-- was routes(cfg) (undefined). Use mux.
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	log.Printf("auth up on %s (issuer=%s)", srv.Addr, cfg.Issuer)
-	log.Fatal(srv.ListenAndServe())
+	slog.Info("auth service listening", "addr", srv.Addr, "issuer", cfg.Issuer)
+	if err := srv.ListenAndServe(); err != nil {
+		logger.Error("server error", "error", err)
+		os.Exit(1)
+	}
 }

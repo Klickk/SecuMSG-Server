@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"messages/internal/msgjson"
+	"messages/internal/observability/metrics"
+	"messages/internal/observability/middleware"
 	"messages/internal/store"
 	"time"
 
@@ -46,10 +48,15 @@ func (s *Service) Enqueue(ctx context.Context, in SendInput) (store.Message, err
 		Header:       msgjson.JSON(append([]byte(nil), in.Header...)),
 		SentAt:       s.now().UTC(),
 	}
-	log.Printf("enqueue msg: %+v", msg)
 	if err := s.store.Create(ctx, &msg); err != nil {
 		return store.Message{}, err
 	}
+	chatType := "unknown"
+	reqID := middleware.RequestIDFromContext(ctx)
+	traceID := middleware.TraceIDFromContext(ctx)
+	slog.Info("stored ciphertext", "conv_id", msg.ConvID, "from_device_id", msg.FromDeviceID, "to_device_id", msg.ToDeviceID, "ciphertext_len", len(msg.Ciphertext), "request_id", reqID, "trace_id", traceID)
+	metrics.MessagesStoredTotal.WithLabelValues(chatType).Inc()
+	metrics.MessagesCiphertextBytes.WithLabelValues(chatType).Observe(float64(len(msg.Ciphertext)))
 	return msg, nil
 }
 
@@ -65,4 +72,31 @@ func (s *Service) MarkDelivered(ctx context.Context, ids []uuid.UUID) error {
 		return nil
 	}
 	return s.store.MarkDelivered(ctx, ids, s.now().UTC())
+}
+
+func (s *Service) History(ctx context.Context, deviceID uuid.UUID, since time.Time, convID uuid.UUID, limit int) ([]store.Message, error) {
+	if deviceID == uuid.Nil {
+		return nil, ErrInvalidRequest
+	}
+	scope := "all"
+	if convID != uuid.Nil {
+		scope = "conversation"
+	}
+	metrics.MessageHistoryFetchedTotal.WithLabelValues(scope).Inc()
+	reqID := middleware.RequestIDFromContext(ctx)
+	traceID := middleware.TraceIDFromContext(ctx)
+	slog.Info("fetching message history", "device_id", deviceID, "conv_id", convID, "since", since, "limit", limit, "request_id", reqID, "trace_id", traceID)
+	return s.store.History(ctx, store.HistoryFilter{
+		DeviceID: deviceID,
+		ConvID:   convID,
+		Since:    since,
+		Limit:    limit,
+	})
+}
+
+func (s *Service) Conversations(ctx context.Context, deviceID uuid.UUID) ([]uuid.UUID, error) {
+	if deviceID == uuid.Nil {
+		return nil, ErrInvalidRequest
+	}
+	return s.store.ConversationsForDevice(ctx, deviceID)
 }
