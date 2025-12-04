@@ -7,6 +7,9 @@ logs:
 	$(compose) logs -f gateway auth keys messages
 
 down:
+	$(compose) down
+
+down-clean:
 	$(compose) down -v
 
 # Manually re-run migrations (optional helper)
