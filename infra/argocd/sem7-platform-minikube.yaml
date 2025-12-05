@@ -8,7 +8,7 @@ spec:
 
   source:
     repoURL: https://github.com/Klickk/SecuMSG-Server
-    targetRevision: new-cicd #main          # or new-cicd while you’re testing
+    targetRevision: main #main          # or new-cicd while you’re testing
     path: k8s/overlays/minikube
 
   destination:

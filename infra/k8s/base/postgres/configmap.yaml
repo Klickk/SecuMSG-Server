@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-databases
+data:
+  AUTH_DB: auth_db
+  KEYS_DB: keys_db
+  MESSAGES_DB: messages_db
