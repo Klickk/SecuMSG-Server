@@ -1,0 +1,41 @@
+# Minimal-ish config for local Minikube
+
+ingress:
+  enabled: true
+  hosts:
+    - name: sonarqube.local
+      # if not using TLS locally, disable
+      tls: false
+
+# Use NodePort instead of LoadBalancer since it's Minikube
+service:
+  type: NodePort
+  nodePort: 32000 # optional, or let K8s choose
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: "" # let Minikube default, or set "standard" if you have it
+
+postgresql:
+  enabled: true
+  auth:
+    username: sonar
+    password: sonar
+    database: sonarqube
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+
+monitoringPasscode: "changeme-local-passcode"
+
+community:
+  enabled: true
+
+sonarqube:
+  jvmOpts: "-Xms1024m -Xmx2048m"
+  livenessProbe:
+    initialDelaySeconds: 90
+  readinessProbe:
+    initialDelaySeconds: 90
