@@ -36,6 +36,32 @@ spec:
                 echo "Waiting for Postgres..."
                 sleep 3
               done
+        - name: create-auth-db
+          image: postgres:16
+          env:
+            - name: DB_HOST
+              value: postgres
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: POSTGRES_PASSWORD
+            - name: DB_NAME
+              value: auth_db
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              export PGPASSWORD="$DB_PASSWORD"
+              psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" | grep -q 1 || psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres -c "CREATE DATABASE \"${DB_NAME}\""
       containers:
         - name: auth-migrations
           image: ghcr.io/klickk/secumsg-server/auth-migrations:latest
