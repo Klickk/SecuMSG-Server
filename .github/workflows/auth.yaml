@@ -15,7 +15,6 @@ on:
       - "k8s/base/auth/**"
       - "k8s/overlays/minikube-auth/**"
       - ".github/workflows/auth.yaml"
-
 env:
   IMAGE_NAME: ghcr.io/klickk/secumsg-server/auth
 

@@ -18,7 +18,6 @@ on:
 
 env:
   IMAGE_NAME: ghcr.io/klickk/secumsg-server/crypto-core
-
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
