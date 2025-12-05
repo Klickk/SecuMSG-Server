@@ -2,7 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base/postgres
-  - ../../base/auth
-  - ../../base/keys
-  - ../../base/messages
-  - ../../base/gateway
+  - ../../../k8s/base/auth
+  - ../../../k8s/base/keys
+  - ../../../k8s/base/messages
+  - ../../../k8s/base/gateway
