@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: default
+resources:
+  - ../../base/auth
+configMapGenerator:
+  - name: auth-config
+    literals:
+      - ISSUER=http://auth:8081
+      - PUBLIC_JWKS_PATH=/v1/oauth/jwks
+      - TRUST_PROXY=true
+      - ADDR=:8081
+      - ACCESS_TTL=15m
+      - REFRESH_TTL=720h
+      - AUDIENCE=client
+      - SIGNING_KEY_ID=kid-1
+secretGenerator:
+  - name: auth-secret
+    literals:
+      - DATABASE_URL=postgres://app:secret@postgres:5432/authdb?sslmode=disable
+      - SIGNING_KEY=dev-super-secret-change-me
+generatorOptions:
+  disableNameSuffixHash: true
