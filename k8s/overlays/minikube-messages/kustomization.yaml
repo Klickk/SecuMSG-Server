@@ -8,8 +8,5 @@ configMapGenerator:
     literals:
       - MESSAGES_ADDR=:8084
 secretGenerator:
-  - name: messages-secret
-    literals:
-      - MESSAGES_DATABASE_URL=postgres://app:secret@postgres:5432/messagesdb?sslmode=disable
 generatorOptions:
   disableNameSuffixHash: true

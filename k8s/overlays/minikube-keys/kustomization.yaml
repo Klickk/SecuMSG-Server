@@ -8,8 +8,5 @@ configMapGenerator:
     literals:
       - ADDR=:8082
 secretGenerator:
-  - name: keys-secret
-    literals:
-      - DATABASE_URL=postgres://app:secret@postgres:5432/keysdb?sslmode=disable
 generatorOptions:
   disableNameSuffixHash: true

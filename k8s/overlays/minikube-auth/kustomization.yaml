@@ -17,7 +17,6 @@ configMapGenerator:
 secretGenerator:
   - name: auth-secret
     literals:
-      - DATABASE_URL=postgres://app:secret@postgres:5432/authdb?sslmode=disable
       - SIGNING_KEY=dev-super-secret-change-me
 generatorOptions:
   disableNameSuffixHash: true
