@@ -15,6 +15,7 @@ on:
       - "k8s/base/keys/**"
       - "k8s/overlays/minikube-keys/**"
       - ".github/workflows/keys.yaml"
+      
 env:
   IMAGE_NAME: ghcr.io/klickk/secumsg-server/keys
 
