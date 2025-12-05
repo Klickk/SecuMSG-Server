@@ -6,7 +6,11 @@ import { Login } from "../services/login";
 import { useNavigate } from "react-router-dom";
 import { RegisterResponse } from "../types/types";
 import { setItem, wipeDatabaseIfExists } from "../lib/storage";
-import { getApiBaseUrl, getServiceHost, setServiceHost } from "../config/config";
+import {
+  getApiBaseUrl,
+  getServiceHost,
+  setServiceHost,
+} from "../config/config";
 
 type AuthMode = "login" | "register";
 
@@ -35,31 +39,34 @@ export const AuthPage: React.FC = () => {
       setIsLoading(false);
     }
   };
-
   const handleRegister = async (values: {
     name: string;
     email: string;
     password: string;
   }) => {
     setIsLoading(true);
-      setError(null);
-      try {
-        const success = await Register(values.name, values.email, values.password);
-        if (!success) {
-          setError("Registration failed. Please try again.");
-        } else {
-          const resp: RegisterResponse = success as RegisterResponse;
-          await wipeDatabaseIfExists();
-          await setItem("userId", resp.userId);
-          navigate("/dRegister");
-          console.log("Registration successful");
-        }
-        console.log("register submit", values);
-      } catch (err) {
-        setError("Failed to create account. Please try again.");
-      } finally {
-        setIsLoading(false);
+    setError(null);
+    try {
+      const success = await Register(
+        values.name,
+        values.email,
+        values.password
+      );
+      if (!success) {
+        setError("Registration failed. Please try again.");
+      } else {
+        const resp: RegisterResponse = success as RegisterResponse;
+        await wipeDatabaseIfExists();
+        await setItem("userId", resp.userId);
+        navigate("/dRegister");
+        console.log("Registration successful");
       }
+      console.log("register submit", values);
+    } catch (err) {
+      setError("Failed to create account. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
