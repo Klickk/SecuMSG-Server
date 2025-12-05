@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: keys
-          image: ghcr.io/Klickk/keys-service:latest
+          image: ghcr.io/klickk/secumsg-server/keys:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8082

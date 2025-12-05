@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: auth
-          image: ghcr.io/Klickk/auth-service:latest
+          image: ghcr.io/klickk/secumsg-server/auth:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8081
