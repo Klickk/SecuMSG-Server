@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: default
+resources:
+  - ../../base/keys
+configMapGenerator:
+  - name: keys-config
+    literals:
+      - ADDR=:8082
+secretGenerator:
+  - name: keys-secret
+    literals:
+      - DATABASE_URL=postgres://app:secret@postgres:5432/keysdb?sslmode=disable
+generatorOptions:
+  disableNameSuffixHash: true

@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sem7-platform-minikube
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/Klickk/SecuMSG-Server
+    targetRevision: new-cicd #main          # or new-cicd while you’re testing
+    path: k8s/overlays/minikube
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default # or whatever namespace you deploy into
+
+  syncPolicy:
+    automated:
+      prune: true # delete resources removed from Git
+      selfHeal: true # fix drift automatically
+    syncOptions:
+      - CreateNamespace=true # if your manifests use non-default namespaces

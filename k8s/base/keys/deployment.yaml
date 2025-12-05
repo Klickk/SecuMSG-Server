@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keys
+  labels:
+    app: keys
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keys
+  template:
+    metadata:
+      labels:
+        app: keys
+    spec:
+      containers:
+        - name: keys
+          image: ghcr.io/klickk/secumsg-server/keys:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: keys-config
+            - secretRef:
+                name: keys-secret

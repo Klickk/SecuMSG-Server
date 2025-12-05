@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: default
+resources:
+  - ../../base/gateway
+configMapGenerator:
+  - name: gateway-config
+    literals:
+      - AUTH_BASE_URL=http://auth:8081
+      - KEYS_BASE_URL=http://keys:8082
+      - MESSAGES_BASE_URL=http://messages:8084
+      - ISSUER=http://auth:8081
+      - JWKS_URL=http://auth:8081/v1/oauth/jwks
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+      - GATEWAY_DEBUG=true
+secretGenerator:
+  - name: gateway-secret
+    literals:
+      - GATEWAY_SHARED_HS256_SECRET=dev-super-secret-change-me
+generatorOptions:
+  disableNameSuffixHash: true
