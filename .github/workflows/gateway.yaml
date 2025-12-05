@@ -17,7 +17,7 @@ on:
       - ".github/workflows/gateway.yaml"
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/gateway-service
+  IMAGE_NAME: ghcr.io/klickk/secumsg-server/gateway
 
 jobs:
   build-and-test:

@@ -17,7 +17,7 @@ on:
       - ".github/workflows/messages.yaml"
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/messages-service
+  IMAGE_NAME: ghcr.io/klickk/secumsg-server/messages
 
 jobs:
   build-and-test:

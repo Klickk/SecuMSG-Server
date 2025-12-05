@@ -17,7 +17,7 @@ on:
       - ".github/workflows/keys.yaml"
 
 env:
-  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/keys-service
+  IMAGE_NAME: ghcr.io/klickk/secumsg-server/keys
 
 jobs:
   build-and-test:
