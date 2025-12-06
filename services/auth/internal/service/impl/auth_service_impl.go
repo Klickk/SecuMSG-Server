@@ -82,6 +82,7 @@ func (a *AuthServiceImpl) Register(ctx context.Context, r dto.RegisterRequest, i
 	}
 
 	var out dto.RegisterResponse
+	var createdUser *domain.User
 
 	// 2) single transaction: create user + (optional) password credential
 	err := a.Store.WithTx(ctx, func(tx storeTx) error {
@@ -100,6 +101,7 @@ func (a *AuthServiceImpl) Register(ctx context.Context, r dto.RegisterRequest, i
 		if err := tx.Users().Create(ctx, u); err != nil {
 			return err // unique constraints bubble up (email/username)
 		}
+		createdUser = u
 
 		// 2b) if password supplied, hash then persist credential
 		if r.Password != "" {
@@ -135,6 +137,16 @@ func (a *AuthServiceImpl) Register(ctx context.Context, r dto.RegisterRequest, i
 	if err != nil {
 		return nil, err
 	}
+	if a.TService == nil {
+		return nil, errors.New("token service not configured")
+	}
+	tokens, err := a.TService.Issue(ctx, createdUser, nil, ip, ua)
+	if err != nil {
+		return nil, err
+	}
+	out.AccessToken = tokens.AccessToken
+	out.RefreshToken = tokens.RefreshToken
+	out.ExpiresIn = tokens.ExpiresIn
 	reqID := middleware.RequestIDFromContext(ctx)
 	traceID := middleware.TraceIDFromContext(ctx)
 	slog.Info("auth registration completed", "user_id", out.UserID, "request_id", reqID, "trace_id", traceID, "has_password", r.Password != "")
@@ -150,7 +162,7 @@ func (a *AuthServiceImpl) Login(ctx context.Context, r dto.LoginRequest, ip, ua 
 	if r.EmailOrUsername == "" || r.Password == "" {
 		return nil, ErrEmptyCredential
 	}
-	
+
 	var user *domain.User
 	// We might need a tx if we rehash the password (write). Keep it simple: always use WithTx.
 	var tokens *dto.TokenResponse
@@ -206,7 +218,7 @@ func (a *AuthServiceImpl) Login(ctx context.Context, r dto.LoginRequest, ip, ua 
 		if err != nil {
 			return err
 		}
-		tokens = tr	
+		tokens = tr
 
 		return nil
 	})

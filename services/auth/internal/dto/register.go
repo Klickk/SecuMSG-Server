@@ -11,4 +11,7 @@ type RegisterRequest struct {
 type RegisterResponse struct {
 	UserID                    string `json:"userId"`
 	RequiresEmailVerification bool   `json:"requiresEmailVerification"`
+	AccessToken               string `json:"accessToken,omitempty"`
+	RefreshToken              string `json:"refreshToken,omitempty"`
+	ExpiresIn                 int64  `json:"expiresIn,omitempty"`
 }

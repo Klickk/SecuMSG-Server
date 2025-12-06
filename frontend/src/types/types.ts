@@ -7,6 +7,9 @@ export type TokenResponse = {
 export type RegisterResponse = {
   userId: string;
   requiresEmailVerification: boolean;
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
 };
 
 export type VerifyResponse = {

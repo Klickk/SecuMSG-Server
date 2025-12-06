@@ -64,6 +64,7 @@ type stubTokenService struct {
 
 	issueCalls []struct {
 		userID uuid.UUID
+		device *domain.DeviceID
 		ip     string
 		ua     string
 	}
@@ -72,9 +73,10 @@ type stubTokenService struct {
 func (s *stubTokenService) Issue(ctx context.Context, user *domain.User, deviceID *domain.DeviceID, ip, ua string) (*dto.TokenResponse, error) {
 	s.issueCalls = append(s.issueCalls, struct {
 		userID uuid.UUID
+		device *domain.DeviceID
 		ip     string
 		ua     string
-	}{userID: user.ID, ip: ip, ua: ua})
+	}{userID: user.ID, device: deviceID, ip: ip, ua: ua})
 	if s.issueErr != nil {
 		return nil, s.issueErr
 	}
@@ -249,7 +251,8 @@ func TestAuthServiceRegisterCreatesUserAndPasswordCredential(t *testing.T) {
 			return []byte("hash"), []byte("salt"), []byte("params"), "argon2id", 1, nil
 		},
 	}
-	svc := &AuthServiceImpl{Store: store, PasswordService: ps}
+	ts := &stubTokenService{issueResponse: &dto.TokenResponse{AccessToken: "access", RefreshToken: "refresh", ExpiresIn: 1234}}
+	svc := &AuthServiceImpl{Store: store, PasswordService: ps, TService: ts}
 
 	ctx := context.Background()
 	req := dto.RegisterRequest{Email: "alice@example.com", Username: "alice", Password: "hunter22"}
@@ -257,11 +260,14 @@ func TestAuthServiceRegisterCreatesUserAndPasswordCredential(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register returned error: %v", err)
 	}
-	if resp == nil || resp.UserID == "" {
+	if resp == nil || resp.UserID == "" || resp.AccessToken == "" || resp.RefreshToken == "" {
 		t.Fatalf("expected response with user id, got %+v", resp)
 	}
 	if !resp.RequiresEmailVerification {
 		t.Fatalf("expected email verification to be required")
+	}
+	if len(ts.issueCalls) != 1 || ts.issueCalls[0].userID.String() != resp.UserID {
+		t.Fatalf("expected token issuance, got %+v", ts.issueCalls)
 	}
 	if len(ps.hashCalls) != 1 || ps.hashCalls[0] != req.Password {
 		t.Fatalf("expected password hash to be invoked once with provided password")

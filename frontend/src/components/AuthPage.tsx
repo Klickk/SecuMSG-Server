@@ -5,8 +5,10 @@ import { Register } from "../services/register";
 import { Login } from "../services/login";
 import { useNavigate } from "react-router-dom";
 import { RegisterResponse } from "../types/types";
-import { setItem, wipeDatabaseIfExists } from "../lib/storage";
+import { getItem, setItem, wipeDatabaseIfExists } from "../lib/storage";
 import { verifyAccessToken } from "../services/verify";
+import registerDevice from "../services/registerDevice";
+import { MessagingClient } from "../lib/messagingClient";
 import {
   getApiBaseUrl,
   getServiceHost,
@@ -40,8 +42,21 @@ export const AuthPage: React.FC = () => {
       await wipeDatabaseIfExists();
       await setItem("userId", verification.userId);
       await setItem("username", values.email);
-      navigate("/dRegister");
-      console.log("Received tokens:", tokenResponse);
+      const existingState = await MessagingClient.load();
+      if (!existingState) {
+        const { device } = await registerDevice(
+          navigator.userAgent.slice(0, 32) || "My device"
+        );
+        await setItem("deviceId", device.deviceId);
+        await setItem("deviceName", device.name);
+      } else {
+        const persistedDeviceId = await getItem("deviceId");
+        if (!persistedDeviceId) {
+          await setItem("deviceId", existingState.deviceId());
+        }
+      }
+      navigate("/messages");
+      console.log("Received tokens and ensured device registration");
     } catch (err) {
       setError("Failed to sign in. Please try again.");
     } finally {
@@ -67,13 +82,19 @@ export const AuthPage: React.FC = () => {
         const resp: RegisterResponse = success as RegisterResponse;
         await wipeDatabaseIfExists();
         await setItem("username", values.name);
-        // Immediately sign in to obtain tokens required for device actions.
-        const tokens = await Login(values.email, values.password);
-        await setItem("accessToken", tokens.accessToken);
-        await setItem("refreshToken", tokens.refreshToken);
-        const verification = await verifyAccessToken();
-        await setItem("userId", verification.userId ?? resp.userId);
-        navigate("/dRegister");
+        await setItem("accessToken", resp.accessToken);
+        await setItem("refreshToken", resp.refreshToken);
+        await setItem("userId", resp.userId);
+
+        try {
+          const { device } = await registerDevice(values.name + " device");
+          await setItem("deviceId", device.deviceId);
+          await setItem("deviceName", device.name);
+          navigate("/messages");
+        } catch (deviceErr) {
+          console.error("Automatic device registration failed", deviceErr);
+          navigate("/dRegister");
+        }
         console.log("Registration successful");
       }
       console.log("register submit", values);
