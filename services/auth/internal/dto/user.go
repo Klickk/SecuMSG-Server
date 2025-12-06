@@ -9,3 +9,7 @@ type ResolveUserResponse struct {
 	Username string `json:"username"`
 	DeviceID string `json:"deviceId"`
 }
+
+type ResolveDeviceRequest struct {
+	DeviceID string `json:"deviceId"`
+}

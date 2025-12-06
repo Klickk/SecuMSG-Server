@@ -55,6 +55,19 @@ func (d *DeviceStore) GetFirstActiveByUserID(ctx context.Context, userID uuid.UU
 	return &device, nil
 }
 
+func (d *DeviceStore) GetActiveByID(ctx context.Context, id uuid.UUID) (*domain.Device, error) {
+	var device domain.Device
+	if err := d.db.WithContext(ctx).
+		Where("id = ? AND revoked_at IS NULL", id).
+		First(&device).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrRecordNotFound
+		}
+		return nil, err
+	}
+	return &device, nil
+}
+
 func (d *DeviceStore) Revoke(ctx context.Context, deviceID uuid.UUID) error {
 	res := d.db.WithContext(ctx).
 		Model(&domain.Device{}).

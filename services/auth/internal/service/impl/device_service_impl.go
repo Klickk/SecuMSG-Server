@@ -122,6 +122,30 @@ func (d *DeviceServiceImpl) ResolveFirstActiveByUsername(ctx context.Context, us
 	return user, device, nil
 }
 
+func (d *DeviceServiceImpl) ResolveActiveByDeviceID(ctx context.Context, deviceID domain.DeviceID) (*domain.User, *domain.Device, error) {
+	if err := d.ensureStore(); err != nil {
+		return nil, nil, err
+	}
+	if deviceID == uuid.Nil {
+		return nil, nil, ErrInvalidDeviceID
+	}
+	device, err := d.store.Devices().GetActiveByID(ctx, uuid.UUID(deviceID))
+	if err != nil {
+		if errors.Is(err, store.ErrRecordNotFound) {
+			return nil, nil, domain.ErrDeviceNotFound
+		}
+		return nil, nil, err
+	}
+	user, err := d.store.Users().GetByID(ctx, uuid.UUID(device.UserID))
+	if err != nil {
+		if errors.Is(err, store.ErrRecordNotFound) {
+			return nil, nil, domain.ErrRecordNotFound
+		}
+		return nil, nil, err
+	}
+	return user, device, nil
+}
+
 func (d *DeviceServiceImpl) ensureStore() error {
 	if d.store == nil {
 		return errors.New("device store not configured")

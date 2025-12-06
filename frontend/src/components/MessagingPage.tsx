@@ -7,6 +7,7 @@ import {
 } from "../lib/messagingClient";
 import { getItem, setItem } from "../lib/storage";
 import { resolveContact } from "../services/resolveContact";
+import { resolveContactByDevice } from "../services/resolveDevice";
 
 type Contact = {
   deviceId: string;
@@ -74,31 +75,32 @@ export const MessagingPage: React.FC = () => {
               );
             }
 
-            const byDeviceIdx = prev.findIndex(
-              (c) => c.deviceId === msg.peerDeviceId
-            );
-            if (byDeviceIdx >= 0) {
-              const clone = [...prev];
-              clone[byDeviceIdx] = {
-                ...clone[byDeviceIdx],
-                convId: msg.convId,
-                lastActivity: msg.sentAt.toISOString(),
-              };
-              return clone;
-            }
+        const byDeviceIdx = prev.findIndex(
+          (c) => c.deviceId === msg.peerDeviceId
+        );
+        if (byDeviceIdx >= 0) {
+          const clone = [...prev];
+          clone[byDeviceIdx] = {
+            ...clone[byDeviceIdx],
+            convId: msg.convId,
+            lastActivity: msg.sentAt.toISOString(),
+          };
+          return clone;
+        }
 
-            return [
-              ...prev,
-              {
-                deviceId: msg.peerDeviceId,
-                label: "New contact",
-                convId: msg.convId,
-                lastActivity: msg.sentAt.toISOString(),
-              },
-            ];
-          });
-          setSelectedConvId((prev) => prev ?? msg.convId);
-        },
+        return [
+          ...prev,
+          {
+            deviceId: msg.peerDeviceId,
+            label: "New contact",
+            convId: msg.convId,
+            lastActivity: msg.sentAt.toISOString(),
+          },
+        ];
+      });
+      resolveUsernameForDevice(msg.peerDeviceId, msg.convId);
+      setSelectedConvId((prev) => prev ?? msg.convId);
+    },
         (state) => {
           if (state === "open") setWsStatus("Listening for incoming messages");
           if (state === "closed") setWsStatus("Connection closed");
@@ -182,6 +184,45 @@ export const MessagingPage: React.FC = () => {
       cancelled = true;
     };
   }, []);
+
+  const resolveUsernameForDevice = useCallback(
+    async (deviceId: string, convId?: string) => {
+      try {
+        const res = await resolveContactByDevice(deviceId);
+        setContacts((prev) =>
+          prev.map((c) => {
+            const match =
+              c.deviceId === deviceId || (convId && c.convId === convId);
+            if (!match) return c;
+            const nextLabel =
+              c.label === "New contact" || c.label.trim() === ""
+                ? res.username
+                : c.label;
+            return {
+              ...c,
+              deviceId: res.deviceId,
+              username: res.username,
+              label: nextLabel,
+            };
+          })
+        );
+      } catch (err) {
+        console.warn("Could not resolve username for device", err);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    // Backfill usernames for any contacts missing them
+    (async () => {
+      for (const contact of contacts) {
+        if (!contact.username) {
+          await resolveUsernameForDevice(contact.deviceId, contact.convId);
+        }
+      }
+    })();
+  }, [contacts, resolveUsernameForDevice]);
 
   useEffect(() => {
     if (!selectedConvId && contacts.length > 0) {
@@ -355,6 +396,24 @@ export const MessagingPage: React.FC = () => {
     }
   };
 
+  const handleRenameContact = () => {
+    if (!activeContact) return;
+    const next = window.prompt(
+      "Set a label for this contact",
+      activeContact.label || activeContact.username || ""
+    );
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed) return;
+    setContacts((prev) =>
+      prev.map((c) =>
+        c.convId === activeContact.convId
+          ? { ...c, label: trimmed }
+          : c
+      )
+    );
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     await sendMessage();
@@ -475,6 +534,13 @@ export const MessagingPage: React.FC = () => {
                       </p>
                     )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={handleRenameContact}
+                    className="text-xs px-3 py-1 rounded-full border border-slate-700 text-slate-200 hover:border-sky-500 hover:text-sky-300"
+                  >
+                    Rename
+                  </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3 custom-scroll">

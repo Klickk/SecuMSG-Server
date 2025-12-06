@@ -13,4 +13,5 @@ type DeviceService interface {
 	) (*domain.Device, error)
 	Revoke(ctx context.Context, deviceID domain.DeviceID) error
 	ResolveFirstActiveByUsername(ctx context.Context, username string) (*domain.User, *domain.Device, error)
+	ResolveActiveByDeviceID(ctx context.Context, deviceID domain.DeviceID) (*domain.User, *domain.Device, error)
 }

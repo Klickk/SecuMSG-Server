@@ -179,6 +179,37 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 		})
 	})
 
+	mux.HandleFunc("/v1/users/resolve-device", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var body dto.ResolveDeviceRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		deviceID, err := uuid.Parse(strings.TrimSpace(body.DeviceID))
+		if err != nil {
+			http.Error(w, "invalid deviceId", http.StatusBadRequest)
+			return
+		}
+		user, device, err := devices.ResolveActiveByDeviceID(r.Context(), domain.DeviceID(deviceID))
+		if err != nil {
+			if errors.Is(err, domain.ErrRecordNotFound) || errors.Is(err, domain.ErrDeviceNotFound) {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, dto.ResolveUserResponse{
+			UserID:   user.ID.String(),
+			Username: user.Username,
+			DeviceID: device.ID.String(),
+		})
+	})
+
 	mux.HandleFunc("/v1/devices/register", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
