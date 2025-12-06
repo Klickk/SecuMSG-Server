@@ -24,6 +24,7 @@ import {
   type PersistedMessage,
 } from "./messageStorage";
 import { getItem, setItem } from "./storage";
+import { requireAccessToken } from "./authToken";
 import { getApiBaseUrl } from "../config/config";
 
 export type InboundEnvelope = {
@@ -83,6 +84,10 @@ const STORAGE_KEY = "secumsg-state";
 export class MessagingClient {
   private device: Device;
   private sessions: Map<string, SessionState>;
+  private async authHeaders(): Promise<Record<string, string>> {
+    const token = await requireAccessToken();
+    return { Authorization: `Bearer ${token}` };
+  }
 
   constructor(
     private state: {
@@ -113,6 +118,8 @@ export class MessagingClient {
   }> {
     const device = GenerateIdentityKeypair();
     const bundle = device.PublishPrekeyBundle(5);
+    const token = await requireAccessToken();
+    const headers = { Authorization: `Bearer ${token}` };
 
     const authPayload = {
       UserID: userId,
@@ -122,7 +129,8 @@ export class MessagingClient {
 
     const authResp = await axios.post(
       `${baseUrl}/auth/devices/register`,
-      authPayload
+      authPayload,
+      { headers }
     );
     const deviceInfo = authResp.data as {
       deviceId: string;
@@ -147,7 +155,7 @@ export class MessagingClient {
       })),
     };
 
-    await axios.post(`${baseUrl}/keys/device/register`, keysPayload);
+    await axios.post(`${baseUrl}/keys/device/register`, keysPayload, { headers });
 
     const client = new MessagingClient(
       {
@@ -237,7 +245,7 @@ export class MessagingClient {
       to_device_id: toDeviceId,
       ciphertext: toBase64(ciphertext),
       header: headerPayload,
-    });
+    }, { headers: await this.authHeaders() });
 
     await this.save();
 
@@ -286,13 +294,15 @@ export class MessagingClient {
     return inbound;
   }
 
-  connectWebSocket(
+  async connectWebSocket(
     onMessage: (msg: InboundMessage) => void,
     onStatus?: (state: "open" | "closed" | "error") => void
-  ): WebSocket {
+  ): Promise<WebSocket> {
+    const token = await requireAccessToken();
     const url = buildWebSocketURL(
       this.state.messagesBaseUrl,
-      this.state.deviceId
+      this.state.deviceId,
+      token
     );
     const ws = new WebSocket(url);
 
@@ -340,7 +350,9 @@ export class MessagingClient {
     const endpoint = `${
       this.state.keysBaseUrl
     }/keys/bundle?device_id=${encodeURIComponent(deviceId)}`;
-    const response = await axios.get(endpoint);
+    const response = await axios.get(endpoint, {
+      headers: await this.authHeaders(),
+    });
     const data = response.data as {
       deviceId: string;
       identityKey: string;
@@ -371,6 +383,7 @@ export class MessagingClient {
       `${this.state.messagesBaseUrl}/messages/conversations`,
       {
         params: { device_id: this.state.deviceId },
+        headers: await this.authHeaders(),
       }
     );
 
@@ -398,6 +411,7 @@ export class MessagingClient {
       `${this.state.messagesBaseUrl}/messages/history`,
       {
         params,
+        headers: await this.authHeaders(),
       }
     );
 
@@ -520,9 +534,13 @@ function toBytes(input: ByteLike): Uint8Array {
   throw new Error("unsupported byte input");
 }
 
-function buildWebSocketURL(base: string, deviceId: string): string {
+function buildWebSocketURL(base: string, deviceId: string, token?: string): string {
   const trimmed = base.replace(/\/+$/, "");
-  const withPath = `${trimmed}/ws?device_id=${encodeURIComponent(deviceId)}`;
+  const params = new URLSearchParams({ device_id: deviceId });
+  if (token) {
+    params.set("access_token", token);
+  }
+  const withPath = `${trimmed}/ws?${params.toString()}`;
   if (withPath.startsWith("http://")) {
     return "ws://" + withPath.slice("http://".length);
   }

@@ -12,6 +12,7 @@ type Config struct {
 	DatabaseURL      string
 	WSPollInterval   time.Duration
 	DeliveryBatchMax int
+	AuthBaseURL      string
 }
 
 func Load() Config {
@@ -28,6 +29,7 @@ func Load() Config {
 		DatabaseURL:      dbURL,
 		WSPollInterval:   poll,
 		DeliveryBatchMax: batch,
+		AuthBaseURL:      envOr("AUTH_BASE_URL", "http://localhost:8081"),
 	}
 }
 

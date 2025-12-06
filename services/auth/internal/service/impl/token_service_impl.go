@@ -179,34 +179,78 @@ func (t *TokenServiceImpl) RevokeSession(ctx context.Context, sessionID domain.S
 }
 
 // VerifyAccess validates an access token's signature, claims, and session state.
-func (t *TokenServiceImpl) VerifyAccess(ctx context.Context, tokenStr string) (bool, error) {
+// If a deviceId is provided, it additionally checks whether the device belongs to the token's subject.
+func (t *TokenServiceImpl) VerifyAccess(ctx context.Context, req dto.VerifyRequest) (dto.VerifyResponse, error) {
+	tokenStr := strings.TrimSpace(req.Token)
+	if tokenStr == "" {
+		return dto.VerifyResponse{Valid: false}, nil
+	}
+
 	claims := &AccessClaims{}
 	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	tok, err := parser.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
 		return t.cfg.SigningKey, nil
 	})
 	if err != nil || !tok.Valid {
-		return false, nil
+		return dto.VerifyResponse{Valid: false}, nil
 	}
 	if claims.Issuer != t.cfg.Issuer || !containsAudience(claims.Audience, t.cfg.Audience) {
-		return false, nil
+		return dto.VerifyResponse{Valid: false}, nil
 	}
 	sessID, err := uuid.Parse(claims.SID)
 	if err != nil {
-		return false, nil
+		return dto.VerifyResponse{Valid: false}, nil
 	}
 	sess, err := t.store.Sessions().GetByID(ctx, sessID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
+			return dto.VerifyResponse{Valid: false}, nil
 		}
-		return false, err
+		return dto.VerifyResponse{}, err
 	}
 	now := time.Now().UTC()
 	if sess.RevokedAt != nil || now.After(sess.ExpiresAt) {
-		return false, nil
+		return dto.VerifyResponse{Valid: false}, nil
 	}
-	return true, nil
+
+	var tokenDeviceID string
+	if claims.DID != nil {
+		tokenDeviceID = *claims.DID
+	}
+	resp := dto.VerifyResponse{
+		Valid:            true,
+		UserID:           sess.UserID.String(),
+		SessionID:        sess.ID.String(),
+		TokenDeviceID:    tokenDeviceID,
+		DeviceAuthorized: true,
+	}
+
+	deviceParam := strings.TrimSpace(req.DeviceID)
+	if deviceParam != "" {
+		devID, err := uuid.Parse(deviceParam)
+		if err != nil {
+			resp.DeviceAuthorized = false
+			return resp, nil
+		}
+		// If the token was minted for a specific device, enforce it matches.
+		if claims.DID != nil && *claims.DID != devID.String() {
+			resp.DeviceAuthorized = false
+			return resp, nil
+		}
+		dev, err := t.store.Devices().GetActiveByID(ctx, devID)
+		if err != nil {
+			if errors.Is(err, store.ErrRecordNotFound) {
+				resp.DeviceAuthorized = false
+				return resp, nil
+			}
+			return dto.VerifyResponse{}, err
+		}
+		if dev.UserID != sess.UserID {
+			resp.DeviceAuthorized = false
+		}
+	}
+
+	return resp, nil
 }
 
 // ====== Helpers ======

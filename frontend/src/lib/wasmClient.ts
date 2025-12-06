@@ -30,6 +30,7 @@ export interface WasmClient {
     messagesUrl: string;
     userId?: string;
     deviceId?: string;
+    accessToken?: string;
   }): Promise<WasmRegistrationResult>;
   prepareSend(options: {
     state: string;
@@ -105,12 +106,14 @@ async function initialize(): Promise<WasmClient> {
     messagesUrl: string;
     userId?: string;
     deviceId?: string;
+    accessToken?: string;
   }): Promise<WasmRegistrationResult> => {
     const payload = {
       keysURL: options.keysUrl,
       messagesURL: options.messagesUrl,
       userID: options.userId ?? '',
-      deviceID: options.deviceId ?? ''
+      deviceID: options.deviceId ?? '',
+      accessToken: options.accessToken ?? ''
     };
     const result = (await call<Promise<Record<string, unknown>>>(
       'msgClientInit',

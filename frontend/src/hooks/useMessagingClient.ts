@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadWasmClient, WasmClient, WasmStateInfo } from '../lib/wasmClient';
 import { getItem, removeItem, setItem } from '../lib/storage';
+import { requireAccessToken } from '../lib/authToken';
 
 export interface RegistrationForm {
   keysUrl: string;
@@ -131,11 +132,13 @@ export function useMessagingClient() {
       if (!clientRef.current) {
         throw new Error('Encryption engine is still loading');
       }
+      const token = await requireAccessToken();
       const payload = {
         keysUrl: form.keysUrl.trim(),
         messagesUrl: form.messagesUrl.trim(),
         userId: form.userId?.trim(),
-        deviceId: form.deviceId?.trim()
+        deviceId: form.deviceId?.trim(),
+        accessToken: token
       };
       const result = await clientRef.current.init(payload);
       await persistState(result.state);
@@ -184,14 +187,15 @@ export function useMessagingClient() {
     [info, persistState]
   );
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!stateRef.current || !info) {
       throw new Error('Device is not initialized');
     }
     if (listener.websocket && listener.status === 'connected') {
       return;
     }
-    const wsUrl = buildWsUrl(info.messagesUrl, info.deviceId);
+    const token = await requireAccessToken();
+    const wsUrl = buildWsUrl(info.messagesUrl, info.deviceId, token);
     const ws = new WebSocket(wsUrl);
     setListener({ status: 'connecting', websocket: ws });
 
@@ -271,10 +275,13 @@ interface InboundEnvelope {
   sent_at: string;
 }
 
-function buildWsUrl(baseUrl: string, deviceId: string): string {
+function buildWsUrl(baseUrl: string, deviceId: string, token?: string): string {
   const url = new URL(baseUrl);
   url.pathname = url.pathname.replace(/\/?$/, '/ws');
   url.searchParams.set('device_id', deviceId);
+  if (token) {
+    url.searchParams.set('access_token', token);
+  }
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
   return url.toString();
 }
@@ -312,9 +319,13 @@ function extractStateInfo(stateJSON: string): StateInfo | null {
 
 async function postEncryptedMessage(baseUrl: string, body: Record<string, unknown>): Promise<void> {
   const target = joinUrl(baseUrl, '/messages/send');
+  const token = await requireAccessToken();
   const response = await fetch(target, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
     body: JSON.stringify(body)
   });
   if (!response.ok) {

@@ -89,8 +89,8 @@ func (s *stubTokenService) RevokeSession(ctx context.Context, sessionID domain.S
 	return errors.New("not implemented")
 }
 
-func (s *stubTokenService) VerifyAccess(ctx context.Context, token string) (bool, error) {
-	return false, errors.New("not implemented")
+func (s *stubTokenService) VerifyAccess(ctx context.Context, req dto.VerifyRequest) (dto.VerifyResponse, error) {
+	return dto.VerifyResponse{Valid: false}, errors.New("not implemented")
 }
 
 type memoryStore struct {

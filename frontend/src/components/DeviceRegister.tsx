@@ -47,7 +47,7 @@ export const DeviceRegisterForm: React.FC<DeviceRegisterFormProps> = ({
       await setItem("deviceName", device.name);
       await setItem("devicePlatform", device.platform);
 
-      const ws = client.connectWebSocket((msg) => {
+      const ws = await client.connectWebSocket((msg) => {
         setMessages((prev) => [...prev, msg]);
       }, (state) => {
         if (state === "open") {

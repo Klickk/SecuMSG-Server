@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"messages/internal/auth"
 	"messages/internal/observability/middleware"
 	"messages/internal/service"
 	"net"
@@ -24,8 +25,47 @@ import (
 
 type Handler struct {
 	svc   *service.Service
+	auth  *auth.Client
 	poll  time.Duration
 	batch int
+}
+
+func extractToken(r *http.Request) string {
+	authz := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(strings.ToLower(authz), "bearer ") {
+		return strings.TrimSpace(authz[len("bearer "):])
+	}
+	if token := strings.TrimSpace(r.URL.Query().Get("access_token")); token != "" {
+		return token
+	}
+	return ""
+}
+
+func (h *Handler) requireAuth(w http.ResponseWriter, r *http.Request, deviceID uuid.UUID) (auth.Claims, bool) {
+	if h.auth == nil {
+		http.Error(w, "authorization not configured", http.StatusInternalServerError)
+		return auth.Claims{}, false
+	}
+	token := extractToken(r)
+	if token == "" {
+		http.Error(w, "missing bearer token", http.StatusUnauthorized)
+		return auth.Claims{}, false
+	}
+	claims, err := h.auth.Verify(r.Context(), token, deviceID)
+	if err != nil {
+		slog.Warn("auth verification failed", "error", err)
+		http.Error(w, "authorization failed", http.StatusUnauthorized)
+		return auth.Claims{}, false
+	}
+	if !claims.Valid {
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+		return auth.Claims{}, false
+	}
+	if deviceID != uuid.Nil && !claims.DeviceAuthorized {
+		http.Error(w, "device not authorized for user", http.StatusForbidden)
+		return auth.Claims{}, false
+	}
+	return claims, true
 }
 
 type sendRequest struct {
@@ -53,14 +93,14 @@ type outboundEnvelope struct {
 	SentAt       time.Time       `json:"sent_at"`
 }
 
-func NewRouter(svc *service.Service, poll time.Duration, batch int) http.Handler {
+func NewRouter(svc *service.Service, poll time.Duration, batch int, authClient *auth.Client) http.Handler {
 	if poll <= 0 {
 		poll = 500 * time.Millisecond
 	}
 	if batch <= 0 {
 		batch = 50
 	}
-	h := &Handler{svc: svc, poll: poll, batch: batch}
+	h := &Handler{svc: svc, poll: poll, batch: batch, auth: authClient}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -108,6 +148,9 @@ func (h *Handler) handleSend(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Header) == 0 || !json.Valid(req.Header) {
 		http.Error(w, "invalid header", http.StatusBadRequest)
+		return
+	}
+	if _, ok := h.requireAuth(w, r, fromID); !ok {
 		return
 	}
 	ciphertext, err := base64.StdEncoding.DecodeString(req.Ciphertext)
@@ -181,6 +224,9 @@ func (h *Handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 			limit = v
 		}
 	}
+	if _, ok := h.requireAuth(w, r, deviceID); !ok {
+		return
+	}
 
 	msgs, err := h.svc.History(r.Context(), deviceID, since, convID, limit)
 	if err != nil {
@@ -228,6 +274,9 @@ func (h *Handler) handleConversations(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid device_id", http.StatusBadRequest)
 		return
 	}
+	if _, ok := h.requireAuth(w, r, deviceID); !ok {
+		return
+	}
 
 	ids, err := h.svc.Conversations(r.Context(), deviceID)
 	if err != nil {
@@ -263,6 +312,9 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 	deviceID, err := uuid.Parse(deviceParam)
 	if err != nil {
 		http.Error(w, "invalid device_id", http.StatusBadRequest)
+		return
+	}
+	if _, ok := h.requireAuth(w, r, deviceID); !ok {
 		return
 	}
 	ws, err := acceptWebSocket(w, r)

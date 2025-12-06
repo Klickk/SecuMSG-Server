@@ -11,9 +11,14 @@ type RefreshRequest struct {
 }
 
 type VerifyRequest struct {
-	Token string `json:"token"`
+	Token    string `json:"token"`
+	DeviceID string `json:"deviceId,omitempty"`
 }
 
 type VerifyResponse struct {
-	Valid bool `json:"valid"`
+	Valid            bool   `json:"valid"`
+	UserID           string `json:"userId,omitempty"`
+	SessionID        string `json:"sessionId,omitempty"`
+	TokenDeviceID    string `json:"tokenDeviceId,omitempty"`
+	DeviceAuthorized bool   `json:"deviceAuthorized"`
 }

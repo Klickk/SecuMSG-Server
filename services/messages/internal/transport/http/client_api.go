@@ -64,11 +64,39 @@ func (h *Handler) handleClientInit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	userID := strings.TrimSpace(req.UserID)
+	deviceIDParam := strings.TrimSpace(req.DeviceID)
+	if deviceIDParam == "" {
+		http.Error(w, "deviceId is required", http.StatusBadRequest)
+		return
+	}
+	var deviceUUID uuid.UUID
+	if deviceIDParam != "" {
+		var err error
+		deviceUUID, err = uuid.Parse(deviceIDParam)
+		if err != nil {
+			http.Error(w, "invalid deviceId", http.StatusBadRequest)
+			return
+		}
+		deviceIDParam = deviceUUID.String()
+	}
+	claims, ok := h.requireAuth(w, r, deviceUUID)
+	if !ok {
+		return
+	}
+	if userID != "" && userID != claims.UserID.String() {
+		http.Error(w, "userId does not match token subject", http.StatusForbidden)
+		return
+	}
+	if userID == "" {
+		userID = claims.UserID.String()
+	}
 	opts := msgclient.InitOptions{
 		KeysBaseURL:     strings.TrimSpace(req.KeysURL),
 		MessagesBaseURL: strings.TrimSpace(req.MessagesURL),
-		UserID:          strings.TrimSpace(req.UserID),
-		DeviceID:        strings.TrimSpace(req.DeviceID),
+		UserID:          userID,
+		DeviceID:        deviceIDParam,
+		AccessToken:     extractToken(r),
 	}
 	if opts.KeysBaseURL == "" || opts.MessagesBaseURL == "" {
 		http.Error(w, "keysUrl and messagesUrl are required", http.StatusBadRequest)
@@ -124,6 +152,9 @@ func (h *Handler) handleClientSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "plaintext is required", http.StatusBadRequest)
 		return
 	}
+	if _, ok := h.requireAuth(w, r, uuid.Nil); !ok {
+		return
+	}
 	state, err := msgclient.LoadStateFromJSON([]byte(stateData))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -134,7 +165,7 @@ func (h *Handler) handleClientSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := postEncryptedMessage(r.Context(), state.MessagesBaseURL(), prepared); err != nil {
+	if err := postEncryptedMessage(r.Context(), extractToken(r), state.MessagesBaseURL(), prepared); err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -154,6 +185,9 @@ func (h *Handler) handleClientEnvelope(w http.ResponseWriter, r *http.Request) {
 	var req clientEnvelopeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if _, ok := h.requireAuth(w, r, uuid.Nil); !ok {
 		return
 	}
 	stateData := strings.TrimSpace(req.State)
@@ -189,7 +223,7 @@ func (h *Handler) handleClientEnvelope(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func postEncryptedMessage(ctx context.Context, base string, payload any) error {
+func postEncryptedMessage(ctx context.Context, token string, base string, payload any) error {
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	if base == "" {
 		return errors.New("message base URL missing")
@@ -204,6 +238,9 @@ func postEncryptedMessage(ctx context.Context, base string, payload any) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if token = strings.TrimSpace(token); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	client := &http.Client{Timeout: clientHTTPTimeout}
 	resp, err := client.Do(req)
 	if err != nil {

@@ -9,6 +9,14 @@ export type RegisterResponse = {
   requiresEmailVerification: boolean;
 };
 
+export type VerifyResponse = {
+  valid: boolean;
+  userId?: string;
+  sessionId?: string;
+  tokenDeviceId?: string;
+  deviceAuthorized: boolean;
+};
+
 export type DeviceRegisterResponse = {
   deviceId: string;
   userId: string;

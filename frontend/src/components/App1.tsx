@@ -72,11 +72,9 @@ function App() {
     if (listener.status === "connected" || listener.status === "connecting") {
       disconnect();
     } else {
-      try {
-        connect();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
+      void connect().catch((err) =>
+        setError(err instanceof Error ? err.message : String(err))
+      );
     }
   };
 

@@ -186,6 +186,7 @@ func runInit(args []string) error {
 	msgsURL := fs.String("messages-url", getenv("MSGCTL_MESSAGES_URL", defaultMsgBaseURL), "messages service base URL")
 	userID := fs.String("user", "", "existing user ID (optional)")
 	deviceID := fs.String("device", "", "existing device ID (optional)")
+	token := fs.String("token", getenv("MSGCTL_ACCESS_TOKEN", ""), "access token for protected endpoints")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -200,6 +201,7 @@ func runInit(args []string) error {
 		MessagesBaseURL: *msgsURL,
 		UserID:          *userID,
 		DeviceID:        *deviceID,
+		AccessToken:     strings.TrimSpace(*token),
 	})
 	if err != nil {
 		return err
@@ -334,6 +336,9 @@ func postMessage(baseURL string, req *sendRequest) error {
 		return err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if token := strings.TrimSpace(getenv("MSGCTL_ACCESS_TOKEN", "")); token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {
@@ -939,6 +944,9 @@ func websocketURL(base, deviceID string) (string, error) {
 	u.Path = strings.TrimSuffix(u.Path, "/") + "/ws"
 	q := u.Query()
 	q.Set("device_id", deviceID)
+	if token := strings.TrimSpace(getenv("MSGCTL_ACCESS_TOKEN", "")); token != "" {
+		q.Set("access_token", token)
+	}
 	u.RawQuery = q.Encode()
 	return u.String(), nil
 }

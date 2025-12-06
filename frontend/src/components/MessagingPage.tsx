@@ -62,52 +62,57 @@ export const MessagingPage: React.FC = () => {
       }
       setClient(loaded);
 
-      socket = loaded.connectWebSocket(
-        (msg) => {
-          setMessages((prev) => [...prev, msg]);
-          setContacts((prev) => {
-            const existingByConv = prev.find((c) => c.convId === msg.convId);
-            if (existingByConv) {
-              return prev.map((c) =>
-                c.convId === msg.convId
-                  ? { ...c, lastActivity: msg.sentAt.toISOString() }
-                  : c
+      try {
+        socket = await loaded.connectWebSocket(
+          (msg) => {
+            setMessages((prev) => [...prev, msg]);
+            setContacts((prev) => {
+              const existingByConv = prev.find((c) => c.convId === msg.convId);
+              if (existingByConv) {
+                return prev.map((c) =>
+                  c.convId === msg.convId
+                    ? { ...c, lastActivity: msg.sentAt.toISOString() }
+                    : c
+                );
+              }
+
+              const byDeviceIdx = prev.findIndex(
+                (c) => c.deviceId === msg.peerDeviceId
               );
-            }
+              if (byDeviceIdx >= 0) {
+                const clone = [...prev];
+                clone[byDeviceIdx] = {
+                  ...clone[byDeviceIdx],
+                  convId: msg.convId,
+                  lastActivity: msg.sentAt.toISOString(),
+                };
+                return clone;
+              }
 
-        const byDeviceIdx = prev.findIndex(
-          (c) => c.deviceId === msg.peerDeviceId
-        );
-        if (byDeviceIdx >= 0) {
-          const clone = [...prev];
-          clone[byDeviceIdx] = {
-            ...clone[byDeviceIdx],
-            convId: msg.convId,
-            lastActivity: msg.sentAt.toISOString(),
-          };
-          return clone;
-        }
-
-        return [
-          ...prev,
-          {
-            deviceId: msg.peerDeviceId,
-            label: "New contact",
-            convId: msg.convId,
-            lastActivity: msg.sentAt.toISOString(),
+              return [
+                ...prev,
+                {
+                  deviceId: msg.peerDeviceId,
+                  label: "New contact",
+                  convId: msg.convId,
+                  lastActivity: msg.sentAt.toISOString(),
+                },
+              ];
+            });
+            resolveUsernameForDevice(msg.peerDeviceId, msg.convId);
+            setSelectedConvId((prev) => prev ?? msg.convId);
           },
-        ];
-      });
-      resolveUsernameForDevice(msg.peerDeviceId, msg.convId);
-      setSelectedConvId((prev) => prev ?? msg.convId);
-    },
-        (state) => {
-          if (state === "open") setWsStatus("Listening for incoming messages");
-          if (state === "closed") setWsStatus("Connection closed");
-          if (state === "error")
-            setWsStatus("Connection error – retry or refresh");
-        }
-      );
+          (state) => {
+            if (state === "open") setWsStatus("Listening for incoming messages");
+            if (state === "closed") setWsStatus("Connection closed");
+            if (state === "error")
+              setWsStatus("Connection error – retry or refresh");
+          }
+        );
+      } catch (err) {
+        console.error("Failed to open websocket", err);
+        setWsStatus("Authentication required to connect.");
+      }
     })();
 
     return () => {

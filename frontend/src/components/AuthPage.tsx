@@ -6,6 +6,7 @@ import { Login } from "../services/login";
 import { useNavigate } from "react-router-dom";
 import { RegisterResponse } from "../types/types";
 import { setItem, wipeDatabaseIfExists } from "../lib/storage";
+import { verifyAccessToken } from "../services/verify";
 import {
   getApiBaseUrl,
   getServiceHost,
@@ -32,6 +33,14 @@ export const AuthPage: React.FC = () => {
       const tokenResponse = await Login(values.email, values.password);
       await setItem("accessToken", tokenResponse.accessToken);
       await setItem("refreshToken", tokenResponse.refreshToken);
+      const verification = await verifyAccessToken();
+      if (!verification.valid || !verification.userId) {
+        throw new Error("Token verification failed");
+      }
+      await wipeDatabaseIfExists();
+      await setItem("userId", verification.userId);
+      await setItem("username", values.email);
+      navigate("/dRegister");
       console.log("Received tokens:", tokenResponse);
     } catch (err) {
       setError("Failed to sign in. Please try again.");
@@ -57,8 +66,13 @@ export const AuthPage: React.FC = () => {
       } else {
         const resp: RegisterResponse = success as RegisterResponse;
         await wipeDatabaseIfExists();
-        await setItem("userId", resp.userId);
         await setItem("username", values.name);
+        // Immediately sign in to obtain tokens required for device actions.
+        const tokens = await Login(values.email, values.password);
+        await setItem("accessToken", tokens.accessToken);
+        await setItem("refreshToken", tokens.refreshToken);
+        const verification = await verifyAccessToken();
+        await setItem("userId", verification.userId ?? resp.userId);
         navigate("/dRegister");
         console.log("Registration successful");
       }

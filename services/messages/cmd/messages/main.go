@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"messages/internal/auth"
 	"messages/internal/config"
 	"messages/internal/observability/logging"
 	"messages/internal/observability/metrics"
@@ -50,7 +51,8 @@ func main() {
 	}
 
 	svc := service.New(st)
-	mux := transport.NewRouter(svc, cfg.WSPollInterval, cfg.DeliveryBatchMax)
+	authClient := auth.NewClient(cfg.AuthBaseURL)
+	mux := transport.NewRouter(svc, cfg.WSPollInterval, cfg.DeliveryBatchMax, authClient)
 
 	handler := middleware.WithRequestAndTrace(middleware.WithMetrics(mux))
 

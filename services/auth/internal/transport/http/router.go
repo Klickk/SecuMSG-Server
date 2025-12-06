@@ -144,18 +144,24 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		ok, err := tokens.VerifyAccess(r.Context(), strings.TrimSpace(body.Token))
+		body.Token = strings.TrimSpace(body.Token)
+		body.DeviceID = strings.TrimSpace(body.DeviceID)
+
+		res, err := tokens.VerifyAccess(r.Context(), body)
 		if err != nil {
 			slog.Warn("token verify error", "error", err)
 			http.Error(w, "verification failed", http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, dto.VerifyResponse{Valid: ok})
+		writeJSON(w, http.StatusOK, res)
 	})
 
 	mux.HandleFunc("/v1/users/resolve", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if _, ok := requireToken(w, r, tokens, ""); !ok {
 			return
 		}
 		var body dto.ResolveUserRequest
@@ -182,6 +188,9 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 	mux.HandleFunc("/v1/users/resolve-device", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if _, ok := requireToken(w, r, tokens, ""); !ok {
 			return
 		}
 		var body dto.ResolveDeviceRequest
@@ -220,6 +229,15 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		res, ok := requireToken(w, r, tokens, "")
+		if !ok {
+			return
+		}
+		if trimmed := strings.TrimSpace(req.UserID); trimmed != "" && trimmed != res.UserID {
+			http.Error(w, "userId does not match token subject", http.StatusForbidden)
+			return
+		}
+		req.UserID = res.UserID
 		userID, err := uuid.Parse(strings.TrimSpace(req.UserID))
 		if err != nil {
 			http.Error(w, "invalid userId", http.StatusBadRequest)
@@ -259,6 +277,9 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 			http.Error(w, "invalid deviceId", http.StatusBadRequest)
 			return
 		}
+		if _, ok := requireToken(w, r, tokens, deviceID.String()); !ok {
+			return
+		}
 		if err := devices.Revoke(r.Context(), domain.DeviceID(deviceID)); err != nil {
 			writeDeviceError(w, err)
 			return
@@ -292,4 +313,39 @@ func writeDeviceError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	}
 	http.Error(w, err.Error(), status)
+}
+
+func bearerToken(r *http.Request) string {
+	authz := strings.TrimSpace(r.Header.Get("Authorization"))
+	if strings.HasPrefix(strings.ToLower(authz), "bearer ") {
+		return strings.TrimSpace(authz[len("bearer "):])
+	}
+	if token := strings.TrimSpace(r.URL.Query().Get("access_token")); token != "" {
+		return token
+	}
+	return ""
+}
+
+func requireToken(w http.ResponseWriter, r *http.Request, tokens service.TokenService, deviceID string) (*dto.VerifyResponse, bool) {
+	token := bearerToken(r)
+	if token == "" {
+		http.Error(w, "missing bearer token", http.StatusUnauthorized)
+		return nil, false
+	}
+	req := dto.VerifyRequest{Token: token, DeviceID: strings.TrimSpace(deviceID)}
+	res, err := tokens.VerifyAccess(r.Context(), req)
+	if err != nil {
+		slog.Warn("token verification failed", "error", err)
+		http.Error(w, "authorization failed", http.StatusUnauthorized)
+		return nil, false
+	}
+	if !res.Valid {
+		http.Error(w, "invalid token", http.StatusUnauthorized)
+		return nil, false
+	}
+	if req.DeviceID != "" && !res.DeviceAuthorized {
+		http.Error(w, "device not authorized for user", http.StatusForbidden)
+		return nil, false
+	}
+	return &res, true
 }

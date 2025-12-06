@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"keys/internal/auth"
 	"keys/internal/config"
 	"keys/internal/observability/logging"
 	"keys/internal/observability/metrics"
@@ -45,7 +46,8 @@ func main() {
 
 	st := store.New(db)
 	svc := service.New(st)
-	mux := httptransport.NewRouter(svc)
+	authClient := auth.NewClient(cfg.AuthBaseURL)
+	mux := httptransport.NewRouter(svc, authClient)
 
 	handler := middleware.WithRequestAndTrace(middleware.WithMetrics(mux))
 

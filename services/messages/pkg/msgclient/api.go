@@ -22,6 +22,7 @@ type InitOptions struct {
 	MessagesBaseURL string
 	UserID          string
 	DeviceID        string
+	AccessToken     string
 }
 
 // RegisterDevice provisions a new device with the key service and builds a runtime state.
@@ -54,6 +55,9 @@ func RegisterDevice(ctx context.Context, opts InitOptions) (*State, registerDevi
 		return nil, registerDeviceResponse{}, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	if token := strings.TrimSpace(opts.AccessToken); token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+token)
+	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(httpReq)
 	if err != nil {

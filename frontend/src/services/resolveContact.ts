@@ -1,5 +1,6 @@
 import axios from "axios";
 import config from "../config/config";
+import { authHeaders } from "../lib/authToken";
 
 export type ResolveContactResponse = {
   userId: string;
@@ -10,8 +11,10 @@ export type ResolveContactResponse = {
 export async function resolveContact(
   username: string
 ): Promise<ResolveContactResponse> {
-  const resp = await axios.post(`${config.apiBaseUrl}/auth/resolve`, {
-    username,
-  });
+  const resp = await axios.post(
+    `${config.apiBaseUrl}/auth/resolve`,
+    { username },
+    { headers: await authHeaders() }
+  );
   return resp.data as ResolveContactResponse;
 }
