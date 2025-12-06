@@ -2,9 +2,11 @@ package middleware
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
-	"math/rand"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -15,19 +17,13 @@ const (
 	CtxKeyTraceID   ctxKey = "trace_id"
 )
 
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
-
 func generateID() string {
-	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
-	const length = 16
-
-	b := make([]byte, length)
-	for i := range b {
-		b[i] = letters[rand.Intn(len(letters))]
+	buf := make([]byte, 8) // 16 hex chars
+	if _, err := rand.Read(buf); err == nil {
+		return hex.EncodeToString(buf)
 	}
-	return string(b)
+	// Fallback keeps IDs non-empty even if entropy unavailable.
+	return strconv.FormatInt(time.Now().UnixNano(), 36)
 }
 
 func WithRequestAndTrace(next http.Handler) http.Handler {

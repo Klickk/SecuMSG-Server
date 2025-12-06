@@ -214,8 +214,6 @@ func writeDeviceError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	case errors.Is(err, domain.ErrNoOneTimePrekeys):
 		status = http.StatusConflict
-	default:
-		status = http.StatusBadRequest
 	}
 	http.Error(w, err.Error(), status)
 }

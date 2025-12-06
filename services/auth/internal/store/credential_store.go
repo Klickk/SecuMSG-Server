@@ -41,17 +41,4 @@ func (cs *CredentialStore) GetPasswordByUserID(ctx context.Context, userID uuid.
 
 // --- helpers ---
 
-// onConflictUpdateAllExcept returns a clause to upsert everything except the listed columns.
-// You can replace this with gorm.io/gorm/clause.
-
-func onConflictUpdateAllExcept(except ...string) clause.OnConflict {
-	ex := map[string]struct{}{}
-	for _, e := range except {
-		ex[e] = struct{}{}
-	}
-	return clause.OnConflict{
-		UpdateAll: true,
-		DoUpdates: clause.Assignments(map[string]interface{}{}), // UpdateAll + Except handled by GORM
-		// NOTE: GORM doesn't have Except in UpdateAll; alternatively enumerate columns explicitly.
-	}
-}
+// onConflictUpdateAllExcept helper was unused; keeping the section for future helpers.

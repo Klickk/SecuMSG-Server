@@ -36,7 +36,9 @@ func NewJWTValidator(ctx context.Context, jwksURL, issuer string) (*JWTValidator
 func (j *JWTValidator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		result := "success"
-		defer metrics.AuthenticationAttemptsTotal.WithLabelValues("jwks", result).Inc()
+		defer func() {
+			metrics.AuthenticationAttemptsTotal.WithLabelValues("jwks", result).Inc()
+		}()
 		reqID := obsmw.RequestIDFromContext(r.Context())
 		traceID := obsmw.TraceIDFromContext(r.Context())
 		raw := r.Header.Get("Authorization")
@@ -58,6 +60,7 @@ func (j *JWTValidator) Middleware(next http.Handler) http.Handler {
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
+			result = "failure"
 			http.Error(w, "invalid token claims", http.StatusUnauthorized)
 			return
 		}

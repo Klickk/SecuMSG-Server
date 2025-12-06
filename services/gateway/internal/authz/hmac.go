@@ -28,7 +28,9 @@ func NewHMACValidator(secret, issuer string) *HMACValidator {
 func (h *HMACValidator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		result := "success"
-		defer metrics.AuthenticationAttemptsTotal.WithLabelValues("hmac", result).Inc()
+		defer func() {
+			metrics.AuthenticationAttemptsTotal.WithLabelValues("hmac", result).Inc()
+		}()
 		reqID := obsmw.RequestIDFromContext(r.Context())
 		traceID := obsmw.TraceIDFromContext(r.Context())
 		raw := r.Header.Get("Authorization")
