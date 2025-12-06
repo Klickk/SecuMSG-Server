@@ -12,7 +12,9 @@ func Load() Config {
 	return Config{
 		DatabaseURL: getenv("DATABASE_URL", "postgres://app:secret@localhost:5432/appdb?sslmode=disable"),
 		Addr:        getenv("ADDR", ":8082"),
-		AuthBaseURL: getenv("AUTH_BASE_URL", "http://localhost:8081"),
+		// Default to service DNS name for containerized deploys; override to
+		// http://localhost:8081 when running everything on localhost without Docker.
+		AuthBaseURL: getenv("AUTH_BASE_URL", "http://auth:8081"),
 	}
 }
 

@@ -29,7 +29,9 @@ func Load() Config {
 		DatabaseURL:      dbURL,
 		WSPollInterval:   poll,
 		DeliveryBatchMax: batch,
-		AuthBaseURL:      envOr("AUTH_BASE_URL", "http://localhost:8081"),
+		// Default to service DNS name for containerized deploys; override to
+		// http://localhost:8081 when running locally without Docker.
+		AuthBaseURL: envOr("AUTH_BASE_URL", "http://auth:8081"),
 	}
 }
 
