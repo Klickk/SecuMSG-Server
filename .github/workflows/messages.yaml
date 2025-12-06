@@ -88,4 +88,4 @@ jobs:
             -f services/messages/Dockerfile \
             -t $IMAGE_NAME:latest \
             -t $IMAGE_NAME:${{ github.sha }} \
-            services/messages
+            .

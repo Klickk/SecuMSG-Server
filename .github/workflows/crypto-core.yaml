@@ -18,7 +18,7 @@ on:
 
 env:
   IMAGE_NAME: ghcr.io/klickk/secumsg-server/crypto-core
-  
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -60,32 +60,3 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
-  build-and-push:
-    needs: build-and-test
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push Docker image
-        run: |
-          docker buildx build --push \
-            -f services/crypto-core/Dockerfile \
-            -t $IMAGE_NAME:latest \
-            -t $IMAGE_NAME:${{ github.sha }} \
-            services/crypto-core
