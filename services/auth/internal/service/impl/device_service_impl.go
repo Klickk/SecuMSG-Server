@@ -71,7 +71,6 @@ func (d *DeviceServiceImpl) Register(
 	return device, nil
 }
 
-
 func (d *DeviceServiceImpl) Revoke(ctx context.Context, deviceID domain.DeviceID) error {
 	if err := d.ensureStore(); err != nil {
 		return err
@@ -95,6 +94,33 @@ func (d *DeviceServiceImpl) Revoke(ctx context.Context, deviceID domain.DeviceID
 	})
 }
 
+// ResolveFirstActiveByUsername returns the user and their first active (non-revoked) device.
+func (d *DeviceServiceImpl) ResolveFirstActiveByUsername(ctx context.Context, username string) (*domain.User, *domain.Device, error) {
+	if err := d.ensureStore(); err != nil {
+		return nil, nil, err
+	}
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, nil, ErrEmptyUsername
+	}
+
+	user, err := d.store.Users().GetByUsername(ctx, username)
+	if err != nil {
+		if errors.Is(err, store.ErrRecordNotFound) {
+			return nil, nil, domain.ErrRecordNotFound
+		}
+		return nil, nil, err
+	}
+
+	device, err := d.store.Devices().GetFirstActiveByUserID(ctx, user.ID)
+	if err != nil {
+		if errors.Is(err, store.ErrRecordNotFound) {
+			return user, nil, domain.ErrDeviceNotFound
+		}
+		return nil, nil, err
+	}
+	return user, device, nil
+}
 
 func (d *DeviceServiceImpl) ensureStore() error {
 	if d.store == nil {

@@ -1,0 +1,36 @@
+# image-updater.yaml
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: sem7-image-updater
+  namespace: argocd        # <= where your Argo CD Applications live
+spec:
+  namespace: argocd        # <= same here
+  writeBackConfig:
+    method: argocd
+  commonUpdateSettings:
+    # optional: pick your global default
+    updateStrategy: newest-build
+  applicationRefs:
+    - namePattern: "sem7-platform-minikube"
+      images:
+        - alias: auth
+          imageName: ghcr.io/klickk/secumsg-server/auth:latest
+          commonUpdateSettings:
+            updateStrategy: digest
+            pullSecret: pullsecret:argocd-image-updater-system/ghcr-creds
+        - alias: keys
+          imageName: ghcr.io/klickk/secumsg-server/keys:latest
+          commonUpdateSettings:
+            updateStrategy: digest
+            pullSecret: pullsecret:argocd-image-updater-system/ghcr-creds
+        - alias: messages
+          imageName: ghcr.io/klickk/secumsg-server/messages:latest
+          commonUpdateSettings:
+            updateStrategy: digest
+            pullSecret: pullsecret:argocd-image-updater-system/ghcr-creds
+        - alias: gateway
+          imageName: ghcr.io/klickk/secumsg-server/gateway:latest
+          commonUpdateSettings:
+            updateStrategy: digest
+            pullSecret: pullsecret:argocd-image-updater-system/ghcr-creds

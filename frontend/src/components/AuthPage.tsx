@@ -58,6 +58,7 @@ export const AuthPage: React.FC = () => {
         const resp: RegisterResponse = success as RegisterResponse;
         await wipeDatabaseIfExists();
         await setItem("userId", resp.userId);
+        await setItem("username", values.name);
         navigate("/dRegister");
         console.log("Registration successful");
       }

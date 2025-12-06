@@ -153,6 +153,32 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 		writeJSON(w, http.StatusOK, dto.VerifyResponse{Valid: ok})
 	})
 
+	mux.HandleFunc("/v1/users/resolve", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var body dto.ResolveUserRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		user, device, err := devices.ResolveFirstActiveByUsername(r.Context(), body.Username)
+		if err != nil {
+			if errors.Is(err, domain.ErrRecordNotFound) || errors.Is(err, domain.ErrDeviceNotFound) {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, dto.ResolveUserResponse{
+			UserID:   user.ID.String(),
+			Username: user.Username,
+			DeviceID: device.ID.String(),
+		})
+	})
+
 	mux.HandleFunc("/v1/devices/register", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

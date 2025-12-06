@@ -6,10 +6,12 @@ import {
   OutboundMessage,
 } from "../lib/messagingClient";
 import { getItem, setItem } from "../lib/storage";
+import { resolveContact } from "../services/resolveContact";
 
 type Contact = {
   deviceId: string;
   label: string;
+  username?: string;
   convId: string;
   lastActivity?: string;
 };
@@ -27,11 +29,17 @@ export const MessagingPage: React.FC = () => {
   const [messages, setMessages] = useState<
     (InboundMessage | OutboundMessage)[]
   >([]);
+  const [username, setUsername] = useState<string | null>(null);
   const [wsStatus, setWsStatus] = useState<string>(
     "Connecting to message stream..."
   );
   const [showAddContact, setShowAddContact] = useState(false);
-  const [newContact, setNewContact] = useState({ deviceId: "", label: "" });
+  const [newContact, setNewContact] = useState({
+    username: "",
+    label: "",
+  });
+  const [resolvingContact, setResolvingContact] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
   const [historyFetched, setHistoryFetched] = useState<Record<string, boolean>>(
     {}
   );
@@ -83,7 +91,7 @@ export const MessagingPage: React.FC = () => {
               ...prev,
               {
                 deviceId: msg.peerDeviceId,
-                label: `Device ${msg.peerDeviceId.slice(0, 6)}`,
+                label: "New contact",
                 convId: msg.convId,
                 lastActivity: msg.sentAt.toISOString(),
               },
@@ -163,6 +171,19 @@ export const MessagingPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const storedUsername = await getItem("username");
+      if (!cancelled) {
+        setUsername(storedUsername);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!selectedConvId && contacts.length > 0) {
       setSelectedConvId(contacts[0].convId);
     }
@@ -170,8 +191,8 @@ export const MessagingPage: React.FC = () => {
 
   const header = useMemo(() => {
     if (!client) return "";
-    return `Device ${client.deviceId()} · User ${client.userId()}`;
-  }, [client]);
+    return username ? `Signed in as ${username}` : "Secure messaging";
+  }, [client, username]);
 
   const activeContact = useMemo(
     () => contacts.find((c) => c.convId === selectedConvId) ?? null,
@@ -214,7 +235,7 @@ export const MessagingPage: React.FC = () => {
           ...prev,
           {
             deviceId: mostRecent.peerDeviceId,
-            label: `Device ${mostRecent.peerDeviceId.slice(0, 6)}`,
+            label: "New contact",
             convId,
             lastActivity: mostRecent.sentAt.toISOString(),
           },
@@ -330,7 +351,7 @@ export const MessagingPage: React.FC = () => {
       setText("");
     } catch (err) {
       console.error("Failed to send message", err);
-      setWsStatus("Send failed – check device IDs and try again.");
+      setWsStatus("Send failed – please try again.");
     }
   };
 
@@ -339,22 +360,33 @@ export const MessagingPage: React.FC = () => {
     await sendMessage();
   };
 
-  const handleAddContact = (e: React.FormEvent) => {
+  const handleAddContact = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newContact.deviceId.trim()) return;
-    const convId = defaultConvId();
-    const label =
-      newContact.label.trim() || `Device ${newContact.deviceId.slice(0, 6)}`;
-    const next: Contact = {
-      deviceId: newContact.deviceId.trim(),
-      label,
-      convId,
-      lastActivity: new Date().toISOString(),
-    };
-    setContacts((prev) => [...prev, next]);
-    setSelectedConvId(convId);
-    setShowAddContact(false);
-    setNewContact({ deviceId: "", label: "" });
+    const username = newContact.username.trim();
+    if (!username) return;
+    setResolveError(null);
+    setResolvingContact(true);
+    try {
+      const resolved = await resolveContact(username);
+      const convId = defaultConvId();
+      const label = newContact.label.trim() || resolved.username;
+      const next: Contact = {
+        deviceId: resolved.deviceId,
+        username: resolved.username,
+        label,
+        convId,
+        lastActivity: new Date().toISOString(),
+      };
+      setContacts((prev) => [...prev, next]);
+      setSelectedConvId(convId);
+      setShowAddContact(false);
+      setNewContact({ username: "", label: "" });
+    } catch (err) {
+      console.error("Failed to resolve contact", err);
+      setResolveError("Could not find that user. Please check the username.");
+    } finally {
+      setResolvingContact(false);
+    }
   };
 
   return (
@@ -406,9 +438,13 @@ export const MessagingPage: React.FC = () => {
                     }`}
                   >
                     <p className="font-medium text-slate-100">
-                      {contact.label}
+                      {contact.username || contact.label}
                     </p>
-                    <p className="text-xs text-slate-400">{contact.deviceId}</p>
+                    {contact.lastActivity && (
+                      <p className="text-[11px] text-slate-500">
+                        Active {new Date(contact.lastActivity).toLocaleString()}
+                      </p>
+                    )}
                     {lastMsg && (
                       <p className="text-xs text-slate-500 mt-1 truncate">
                         {lastMsg.direction === "inbound" ? "Them: " : "You: "}
@@ -431,17 +467,13 @@ export const MessagingPage: React.FC = () => {
                 <div className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
                   <div>
                     <p className="text-lg font-semibold text-slate-100">
-                      {activeContact.label}
+                      {activeContact.username || activeContact.label}
                     </p>
-                    <p className="text-xs text-slate-400">
-                      Device {activeContact.deviceId}
-                    </p>
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    Conversation ID
-                    <span className="ml-2 text-slate-300">
-                      {activeContact.convId}
-                    </span>
+                    {activeContact.lastActivity && (
+                      <p className="text-xs text-slate-400">
+                        Active {new Date(activeContact.lastActivity).toLocaleString()}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -515,7 +547,7 @@ export const MessagingPage: React.FC = () => {
                 <div>
                   <h2 className="text-xl font-semibold">Add recipient</h2>
                   <p className="text-sm text-slate-400 mt-1">
-                    Enter their device ID to start chatting.
+                    Enter their username to start chatting.
                   </p>
                 </div>
                 <button
@@ -529,18 +561,18 @@ export const MessagingPage: React.FC = () => {
               <form className="space-y-3" onSubmit={handleAddContact}>
                 <div className="space-y-1">
                   <label className="text-sm text-slate-300">
-                    Recipient device ID
+                    Recipient username
                   </label>
                   <input
                     className="w-full rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                    value={newContact.deviceId}
+                    value={newContact.username}
                     onChange={(e) =>
                       setNewContact((prev) => ({
                         ...prev,
-                        deviceId: e.target.value,
+                        username: e.target.value,
                       }))
                     }
-                    placeholder="Paste the device ID"
+                    placeholder="username"
                     required
                   />
                 </div>
@@ -557,9 +589,14 @@ export const MessagingPage: React.FC = () => {
                         label: e.target.value,
                       }))
                     }
-                    placeholder="Alice, Work laptop, ..."
+                    placeholder="Friendly name"
                   />
                 </div>
+                {resolveError && (
+                  <div className="text-xs text-red-400 bg-red-950/40 border border-red-800/60 rounded-md px-3 py-2">
+                    {resolveError}
+                  </div>
+                )}
 
                 <div className="flex items-center justify-end gap-2 pt-2">
                   <button
@@ -572,9 +609,9 @@ export const MessagingPage: React.FC = () => {
                   <button
                     type="submit"
                     className="px-4 py-2 rounded-lg bg-sky-500 text-slate-900 font-medium hover:bg-sky-400 disabled:opacity-60 disabled:cursor-not-allowed"
-                    disabled={!newContact.deviceId.trim()}
+                    disabled={!newContact.username.trim() || resolvingContact}
                   >
-                    Save & open chat
+                    {resolvingContact ? "Resolving..." : "Save & open chat"}
                   </button>
                 </div>
               </form>
