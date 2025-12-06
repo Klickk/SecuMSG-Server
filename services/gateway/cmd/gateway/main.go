@@ -107,6 +107,7 @@ func main() {
 		r.Post("/register", p.ForwardJSON("/v1/auth/register"))
 		r.Post("/login", p.ForwardJSON("/v1/auth/login"))
 		r.Post("/refresh", p.ForwardJSON("/v1/auth/refresh"))
+		r.Post("/verify", p.ForwardJSON("/v1/auth/verify"))
 		r.Route("/devices", func(r chi.Router) {
 			r.Post("/register", p.ForwardJSON("/v1/devices/register"))
 			r.Post("/rotate-prekeys", p.ForwardJSON("/v1/devices/rotate-prekeys"))

@@ -31,6 +31,14 @@ func (ss *SessionStore) GetByRefreshID(ctx context.Context, rid uuid.UUID) (*dom
 	return &s, nil
 }
 
+func (ss *SessionStore) GetByID(ctx context.Context, id uuid.UUID) (*domain.Session, error) {
+	var s domain.Session
+	if err := ss.db.WithContext(ctx).First(&s, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 func (ss *SessionStore) Revoke(ctx context.Context, id uuid.UUID, at time.Time) error {
 	return ss.db.WithContext(ctx).
 		Model(&domain.Session{}).

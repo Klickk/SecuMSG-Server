@@ -134,6 +134,25 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 		writeJSON(w, http.StatusOK, res)
 	})
 
+	mux.HandleFunc("/v1/auth/verify", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var body dto.VerifyRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Token) == "" {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		ok, err := tokens.VerifyAccess(r.Context(), strings.TrimSpace(body.Token))
+		if err != nil {
+			slog.Warn("token verify error", "error", err)
+			http.Error(w, "verification failed", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, dto.VerifyResponse{Valid: ok})
+	})
+
 	mux.HandleFunc("/v1/devices/register", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -89,6 +89,10 @@ func (s *stubTokenService) RevokeSession(ctx context.Context, sessionID domain.S
 	return errors.New("not implemented")
 }
 
+func (s *stubTokenService) VerifyAccess(ctx context.Context, token string) (bool, error) {
+	return false, errors.New("not implemented")
+}
+
 type memoryStore struct {
 	mu          sync.Mutex
 	users       map[uuid.UUID]*domain.User

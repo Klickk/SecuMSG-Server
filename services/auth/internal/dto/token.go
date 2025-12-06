@@ -9,3 +9,11 @@ type TokenResponse struct {
 type RefreshRequest struct {
 	RefreshToken string `json:"refreshToken"`
 }
+
+type VerifyRequest struct {
+	Token string `json:"token"`
+}
+
+type VerifyResponse struct {
+	Valid bool `json:"valid"`
+}

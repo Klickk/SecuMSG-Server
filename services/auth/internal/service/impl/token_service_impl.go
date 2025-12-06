@@ -16,6 +16,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // ====== Config ======
@@ -175,6 +176,37 @@ func (t *TokenServiceImpl) Refresh(ctx context.Context, refreshToken string, ip,
 
 func (t *TokenServiceImpl) RevokeSession(ctx context.Context, sessionID domain.SessionID) error {
 	return t.store.Sessions().Revoke(ctx, uuid.UUID(sessionID), time.Now().UTC())
+}
+
+// VerifyAccess validates an access token's signature, claims, and session state.
+func (t *TokenServiceImpl) VerifyAccess(ctx context.Context, tokenStr string) (bool, error) {
+	claims := &AccessClaims{}
+	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
+	tok, err := parser.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+		return t.cfg.SigningKey, nil
+	})
+	if err != nil || !tok.Valid {
+		return false, nil
+	}
+	if claims.Issuer != t.cfg.Issuer || !containsAudience(claims.Audience, t.cfg.Audience) {
+		return false, nil
+	}
+	sessID, err := uuid.Parse(claims.SID)
+	if err != nil {
+		return false, nil
+	}
+	sess, err := t.store.Sessions().GetByID(ctx, sessID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	now := time.Now().UTC()
+	if sess.RevokedAt != nil || now.After(sess.ExpiresAt) {
+		return false, nil
+	}
+	return true, nil
 }
 
 // ====== Helpers ======
