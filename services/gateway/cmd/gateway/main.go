@@ -13,7 +13,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/go-chi/httprate"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"gateway/internal/authz"
@@ -74,7 +73,7 @@ func main() {
 	r.Use(TimeoutExceptWS(30 * time.Second))
 
 	// rate limit (e.g., 100 req / minute by IP)
-	r.Use(httprate.LimitByIP(100, 1*time.Minute))
+	//r.Use(httprate.LimitByIP(100, 1*time.Minute))
 
 	// CORS
 	origins := strings.Split(envOr("CORS_ORIGINS", ""), ",")

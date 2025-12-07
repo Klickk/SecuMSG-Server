@@ -5,9 +5,8 @@ import { Register } from "../services/register";
 import { Login } from "../services/login";
 import { useNavigate } from "react-router-dom";
 import { RegisterResponse } from "../types/types";
-import { getItem, setItem, wipeDatabaseIfExists } from "../lib/storage";
+import { setItem, wipeDatabaseIfExists } from "../lib/storage";
 import { verifyAccessToken } from "../services/verify";
-import registerDevice from "../services/registerDevice";
 import { MessagingClient } from "../lib/messagingClient";
 import {
   getApiBaseUrl,
@@ -28,10 +27,28 @@ export const AuthPage: React.FC = () => {
     setServiceHost(serviceHost);
   }, [serviceHost]);
 
+  const loadValidMessagingState = async (
+    expectedUserId: string
+  ): Promise<MessagingClient | null> => {
+    try {
+      const state = await MessagingClient.load();
+      if (!state) return null;
+      if (state.userId() !== expectedUserId) {
+        return null;
+      }
+      return state;
+    } catch (err) {
+      console.warn("Failed to load messaging state", err);
+      return null;
+    }
+  };
+
   const handleLogin = async (values: { email: string; password: string }) => {
     setIsLoading(true);
     setError(null);
     try {
+      // Drop any stale local state before setting fresh credentials.
+      await wipeDatabaseIfExists();
       const tokenResponse = await Login(values.email, values.password);
       await setItem("accessToken", tokenResponse.accessToken);
       await setItem("refreshToken", tokenResponse.refreshToken);
@@ -39,24 +56,17 @@ export const AuthPage: React.FC = () => {
       if (!verification.valid || !verification.userId) {
         throw new Error("Token verification failed");
       }
-      await wipeDatabaseIfExists();
       await setItem("userId", verification.userId);
       await setItem("username", values.email);
-      const existingState = await MessagingClient.load();
-      if (!existingState) {
-        const { device } = await registerDevice(
-          navigator.userAgent.slice(0, 32) || "My device"
-        );
-        await setItem("deviceId", device.deviceId);
-        await setItem("deviceName", device.name);
+      const state = await loadValidMessagingState(verification.userId);
+      if (state) {
+        await setItem("deviceId", state.deviceId());
+        navigate("/messages");
       } else {
-        const persistedDeviceId = await getItem("deviceId");
-        if (!persistedDeviceId) {
-          await setItem("deviceId", existingState.deviceId());
-        }
+        // No valid device state found → send user to device registration flow.
+        navigate("/dRegister");
       }
-      navigate("/messages");
-      console.log("Received tokens and ensured device registration");
+      console.log("Received tokens and resolved device state");
     } catch (err) {
       setError("Failed to sign in. Please try again.");
     } finally {
@@ -85,16 +95,8 @@ export const AuthPage: React.FC = () => {
         await setItem("accessToken", resp.accessToken);
         await setItem("refreshToken", resp.refreshToken);
         await setItem("userId", resp.userId);
-
-        try {
-          const { device } = await registerDevice(values.name + " device");
-          await setItem("deviceId", device.deviceId);
-          await setItem("deviceName", device.name);
-          navigate("/messages");
-        } catch (deviceErr) {
-          console.error("Automatic device registration failed", deviceErr);
-          navigate("/dRegister");
-        }
+        // After account creation, always go to device registration to provision the device.
+        navigate("/dRegister");
         console.log("Registration successful");
       }
       console.log("register submit", values);

@@ -1,246 +1,248 @@
 # Architectural Choices
 
 > Project: E2EE Messaging Platform  
-Date: 2025-11-02  
-Scope: Captures the key architecture decisions made so far, including motivation, alternatives considered, and consequences.
+Date: 2025-12-07  
+Scope: Current architecture, rationale, and known trade-offs reflected in code, Docker/K8s manifests, and CI.
 ---
 
-## 1) Architecture Style: Microservices with an API Gateway
+## 1) Architecture Style: Microservices with a Thin Gateway
 
 **Decision**  
-Use a small set of Go microservices fronted by an API Gateway.
+Keep a small set of Go services behind an HTTP/WS gateway.
 
-**Services (current & planned)**  
-- **Gateway:** HTTP/WS entry point, CORS, auth delegation, routing.  
-- **Auth:** Registration, login, JWT issuance/refresh, session management.  
-- **Messaging:** Rooms, message envelopes, WS fanout, delivery receipts.  
-- **File (planned):** Encrypted file ingest/retrieval to S3-compatible storage.  
-- **Event Bus(planned):** NATS (or compatible) for domain events and decoupling.
+**Services (current)**  
+- **Gateway:** Reverse-proxy for HTTP + WS, CORS, rate limiting, request/trace IDs.  
+- **Auth:** Users, credentials, sessions, JWT mint/verify, device registry.  
+- **Keys:** Stores/serves identity keys, signed prekeys, and one-time prekeys.  
+- **Messages:** Stores ciphertext envelopes and delivers them via HTTP + WS fan-out.  
+- **Crypto-core (library):** Signal-style X3DH + Double Ratchet implementation consumed by the frontend.
 
 **Motivation**  
-- Clear separation of concerns (security, messaging, storage).  
-- Independent build/deploy for rapid iteration and safe rollbacks.  
-- Aligns with a scalable, enterprise-grade direction while remaining small enough to manage.
+- Keep critical concerns isolated (auth, key directory, message queue/delivery).  
+- Swap/scale services independently; gateway hides service layout from clients.  
+- Crypto primitives live in a tested library, not the gateway/services.
 
-**Alternatives considered**  
-- **Monolith:** simpler initially, but tighter coupling and slower iteration across concerns.  
-- **Functions-only/serverless:** good for spiky workloads; adds vendor coupling and local dev complexity.
+**Not currently planned**  
+- File service and event bus mentioned earlier are not implemented yet; focus is on core messaging + key flows first.
 
 **Consequences**  
-- More operational surface area (multiple services, images, env).  
-- Requires consistent contracts and CI/CD discipline (addressed via Actions + Compose).
+- More moving pieces than a monolith, but each service is small and purpose-built.  
+- Gateway must stay aligned with downstream routes and auth configuration (HS256 shared secret vs JWKS).
 
 ---
 
-## 2) Language & Runtime: Go (Golang)
+## 2) Language & Runtime: Go
 
 **Decision**  
-All backend services implemented in **Go**.
+All backend services and the crypto-core library use Go 1.25.x.
 
 **Motivation**  
-- Performance and efficient concurrency (goroutines, channels).  
-- Strong standard library for HTTP, crypto, and testing.  
-- Simple deploy artifacts (static binaries) and good container fit.
-
-**Alternatives considered**  
-- **Node.js/TypeScript:** rich ecosystem; less optimal for CPU-bound crypto and concurrency.  
-- **Rust:** safety/perf; steeper learning curve, slower iteration for the current team.
+- Strong stdlib for crypto, HTTP, and testing.  
+- Static binaries and small images; easy Docker packaging.  
+- Shared language across services keeps tooling simple (golangci-lint, go test).
 
 **Consequences**  
-- Shared Go modules for common domain types/utilities.  
-- Consistent tooling across services (linters, tests).
+- GORM used for velocity; migrations managed explicitly with migrate containers.  
+- Frontend TypeScript bridges to the Go crypto-core via a local TS wrapper.
 
 ---
 
-## 3) Security Model: End-to-End Encryption (Client-Side)
+## 3) Security Model: Client-Owned E2EE
 
 **Decision**  
-Encryption and key management are **client-owned**. The server never sees plaintext message/file content.
+Encryption happens on the client using the `crypto-core` library (X3DH handshake + Double Ratchet). Servers see only ciphertext and ratchet headers.
 
-**Core points**  
-- Server stores **public keys** and **ciphertext** + metadata.  
-- One-to-one: public-key cryptography for establishing shared secrets; messages encrypted symmetrically per session.  
-- Groups (planned): shared symmetric “sender keys” with rotation on membership changes.  
-- Files: client-side encryption; server stores encrypted blobs and minimal metadata.
+**How it works now**  
+- Devices publish identity key + signature key, signed prekey, and a batch of one-time prekeys via **Keys**.  
+- Senders fetch prekey bundles, run X3DH, and start the ratchet; headers carry ratchet state, not plaintext.  
+- **Messages** only persists `ciphertext` bytes + opaque `header` JSONB plus routing metadata.  
+- One-time prekeys are consumed atomically in the Keys service to prevent reuse.
 
 **Consequences**  
-- Backend focuses on **identity, routing, and storage**.  
-- Zero access to content impacts search/anti-abuse features (must be designed with metadata and user controls).
-
-**Open items**  
-- Protocol choice & spec (e.g., Double Ratchet, X3DH variants) to be formalized.  
-- Key rotation, re-key on device add/remove, attachment key wrapping.
+- Servers cannot decrypt content; debugging relies on metadata and logs.  
+- Attachment flows are not built yet; would follow the same client-encrypt-first rule.  
+- Protocol-level work lives in `services/crypto-core` with deterministic and fuzz tests to catch regressions.
 
 ---
 
 ## 4) Authentication & Sessions
 
 **Decision**  
-Use short-lived **JWT access tokens** and long-lived **refresh tokens** bound to **server-side sessions**.
+HS256-signed JWTs (access + refresh) with server-side session rows; optional device binding.
 
 **Details**  
-- Access tokens: short TTL for safety.  
-- Refresh tokens: server can revoke via session table.  
-- Store **only the IP address** in the session (Postgres `inet`).  
-  - Parse `RemoteAddr` and persist only the host part to avoid `inet` parse errors.
-
-**Alternatives considered**  
-- Stateless-only tokens (no server session): simple but hard to revoke.  
-- Opaque tokens + session store: more round trips, less client autonomy.
+- Auth service creates a `sessions` row (IP + user agent normalized) and mints access/refresh tokens.  
+- Access tokens carry `sid` and optional `did` claims; `Verify` enforces device ownership when provided.  
+- Refresh rotates the DB `refresh_id`, extends expiry, and re-issues both tokens.  
+- Gateway can validate via JWKS (if configured) or shared HS256 secret; defaults to shared secret in Compose.
 
 **Consequences**  
-- Predictable logout/revoke semantics.  
-- A small DB write on login/refresh; acceptable trade-off for control.
+- Predictable revocation via DB and refresh rotation.  
+- IP is stored without port using `netip` normalization to satisfy `inet` columns.  
+- Device-scoped tokens let the message/keys services block cross-user device reuse.
 
 ---
 
 ## 5) Data & Persistence
 
 **Decision**  
-- **PostgreSQL** as the primary relational datastore.  
-- **Object storage** (S3/MinIO) for encrypted files.  
-- **GORM** currently used for rapid development; may evolve to `sqlc` for stricter control where helpful.
-- **One DB per service** every service has its own database.
+PostgreSQL per service (`authdb`, `keysdb`, `messagesdb`) with migrations run by dedicated migrate containers.
+
+**Schemas (high level)**  
+- **Auth:** users, credentials, sessions (`inet` IP, user agent), devices, MFA/audit scaffolding.  
+- **Keys:** users/devices plus identity keys, signed prekeys, and consumable one-time prekeys.  
+- **Messages:** append-only message table with ciphertext `BYTEA`, opaque `header JSONB`, sent/received/delivered timestamps.
 
 **Motivation**  
-- Postgres provides strong consistency, rich types (e.g., `inet`) and indexing.  
-- S3/MinIO standardizes file storage and scales separately from the DB.
-- No need for any service to get data from another, makes it easy to track all the data.
+- Per-service DBs keep blast radius small and allow independent migration cadence.  
+- JSONB headers avoid server-side parsing of ratchet metadata.
 
 **Consequences**  
-- DB migrations managed via a migrations container in Compose (dev/prod).  
-- Clear split between structured data (users, sessions, rooms) and blobs (files).
-
-**Notes**  
-- Lesson learned: ensure session IP is stored as plain IP, not `host:port` when using `inet`.
+- GORM for runtime access; migrations kept in `services/*/migrations` and built into Docker images.  
+- No cross-service DB reads; everything goes through HTTP APIs.
 
 ---
 
 ## 6) Communication Patterns & Protocols
 
 **Decision**  
-- **HTTP/REST** for management endpoints (auth, configuration).  
-- **WebSockets** for real-time messaging fanout.  
-- **Event bus (NATS)(Planned)** for decoupled domain events and cross-service notifications.
+- HTTP/REST behind the gateway for auth, key, and message management.  
+- WebSockets proxied by the gateway for downstream message delivery.
 
-**Motivation**  
-- REST remains the simplest integration surface.  
-- WS provides low-latency delivery for chats without polling.  
-- Event bus enables independent services to react without tight coupling.
+**Details**  
+- Message sends are HTTP POSTs; delivery uses WS with periodic polling/ping from the Messages service to push pending envelopes and mark them delivered.  
+- Gateway adds CORS, rate limiting, request/trace IDs, and proxies `/auth`, `/keys`, `/messages`, `/ws`.  
+- Services call Auth for token verification; no internal message bus yet.
 
 **Consequences**  
-- Requires connection lifecycle handling (WS reconnects, backoff).  
-- Message ordering and idempotency addressed at the envelope level (planned).
+- Simple client surface (single base URL) but gateway routing must stay in sync.  
+- Ordering/idempotency handled at the envelope level; no group semantics yet.
 
 ---
 
 ## 7) Containerization & Environments
 
 **Decision**  
-All services packaged as Docker images. **Docker Compose** used for dev and prod stacks.
+Docker-first for dev and prod, with optional Kustomize manifests for Minikube.
 
 **Dev**  
-- Compose spins up Postgres, migrations, and services with local ports exposed.  
-- Fast inner loop via rebuilds and selective service restart.
+- `.docker/docker-compose.dev.yml` brings up Postgres, run-once migrate jobs, auth/keys/messages/gateway.  
+- `.docker/docker-compose.observability.yml` optionally adds Prometheus, Loki/Promtail, and Grafana.
 
 **Prod**  
-- Compose orchestrates services on a self-hosted host.  
-- Images pulled from GHCR with a configurable `TAG` (supports rollbacks via `sha-<commit>`).
+- `.docker/docker-compose.prod.yml` pulls GHCR images (`:latest` + `:<sha>`), runs migrations, and starts services.  
+- Secrets supplied via env (HS256 signing key, DB password); gateway/auth share the same secret when using HS256.
+
+**K8s**  
+- `k8s/base` + `k8s/overlays/minikube-*` capture early Kustomize manifests; not the primary deployment path yet.
 
 **Consequences**  
-- Single-node orchestration for now; easy to evolve to Swarm/Kubernetes later.  
-- Clear separation via `.env.dev` and `.env.prod` files.
+- Migrations are part of the boot flow; bring-up fails fast if DBs or secrets are missing.  
+- Single-node Compose keeps ops simple until Kubernetes is needed.
+
+---
+
+## 7b) Local Minikube Deployment (Argo CD)
+
+**Decision**  
+Run the platform on a local Minikube cluster via Argo CD using `infra/argocd/sem7-platform-minikube.yaml`.
+
+**Details**  
+- Argo CD Application points at `k8s/overlays/minikube` on `main`; deploys auth/keys/messages/gateway.  
+- Argo CD Image Updater tracks GHCR images (`auth`, `keys`, `messages`, `gateway`) with the `latest` strategy and writes back to `main`.  
+- Destination is the in-cluster API (`kubernetes.default.svc`) and defaults to the `default` namespace; auto-prune + self-heal enabled.
+
+**Consequences**  
+- Local cluster stays in sync with Git; drift is healed automatically.  
+- Image bumps are automated—keep `main` writable for updater commits.  
+- Requires Argo CD + Image Updater running in Minikube before applying the Application manifest.
 
 ---
 
 ## 8) CI/CD Strategy
 
 **Decision**  
-Use **GitHub Actions** for linting, CI, image builds, and deploy to a **self-hosted runner** using Docker Compose.
+Per-service GitHub Actions pipelines for lint, test, and image publish to GHCR; SonarQube on a self-hosted runner.
 
 **Workflows**  
-- **Lint:** GolangCI-Lint across service modules.  
-- **CI:** `go vet`, `go test`, `go build`.  
-- **Publish:** build & push images to **GHCR** with `:latest` and immutable `:sha-<commit>` tags (build cache enabled).  
-- **Deploy:** renders `.env.prod` from **Secrets/Variables**, logs into GHCR, and runs Compose `pull` + `up -d`.
-
-**Motivation**  
-- Fast feedback cycle; reproducible images; safe rollbacks by pinning to `sha-<commit>`.  
-- Straightforward ops with a single Compose host.
+- `lint.yml`: golangci-lint matrix across all Go modules.  
+- `*/.yaml` per service: go test, optional coverage upload to Sonar, build and push Docker images (`ghcr.io/klickk/secumsg-server/<service>`).  
+- Deployment using ArgoCD `7b`.
 
 **Consequences**  
-- Keep workflow and compose paths in sync.  
-- Self-hosted runner must have Docker/Compose and GHCR network access.
+- Fast, isolated feedback per service; crypto-core is tested as a first-class module.  
+- Requires GHCR access and Sonar tokens on CI.
 
 ---
 
 ## 9) Configuration & Secrets
 
 **Decision**  
-- Environment variables for configuration; `.env.prod` generated at deploy time.  
-- GitHub **Secrets** for sensitive values (DB password, signing key).  
-- GitHub **Variables** for non-sensitive values (CORS origins, owner/repo/tag).
+Environment variables everywhere; Compose files wire them into containers. No secrets in git.
 
-**Motivation**  
-- Twelve-Factor alignment; no secrets committed to VCS.  
-- Quoted secrets in `.env` to handle `#` and spaces safely.
+**Details**  
+- Auth signing key provided via `SIGNING_KEY` and reused by the gateway when validating HS256.  
+- Database URLs passed per service; prod Compose injects the password into each DSN.  
+- CORS origins set on the gateway; Auth issuer/audience configurable.  
+- JWKS path exposed by Auth if/when asymmetric keys are added.
 
 **Consequences**  
-- Single source of truth in Actions UI; reproducible deploy manifests.  
-- Easy rotation by updating Secrets and re-deploying.
+- Clear separation between code and secret material; easy rotation by re-running Compose with new env.  
+- Misalignment between gateway/Auth secrets immediately breaks auth (by design).
 
 ---
 
-## 10) Observability, Logging, and Error Handling (Initial)
+## 10) Observability & Logging
 
 **Decision**  
-- Structured logs from services (stdout).  
-- CI surfacing of failing container logs during deploy.  
-- Healthchecks in Compose for basic readiness/liveness.
+Structured slog logs plus Prometheus metrics and health endpoints across services; optional Loki/Grafana stack for dev.
 
-**Planned**  
-- Centralized logs and monitoring with NATS & Grafana .  
-- Request IDs and correlation across gateway → services → event bus.
+**Details**  
+- `/healthz` and `/metrics` on every service; request/trace IDs injected by middleware.  
+- Message store/delivery metrics (counts, ciphertext sizes), auth token issuance metrics, gateway Prom metrics.  
+- `.docker/docker-compose.observability.yml` wires Prometheus + Loki/Promtail + Grafana dashboards.
 
 **Consequences**  
-- Current setup adequate for early stages; observability will be expanded as project evolves.
+- Works locally with Compose; can be pointed at remote monitoring later.  
+- No distributed tracing backend yet; trace IDs are logged for future correlation.
 
 ---
 
-## 11) Testing Strategy (Initial)
+## 11) Testing Strategy
 
 **Decision**  
-- Unit tests in CI for each service.  
-- Integration tests (planned) with ephemeral Postgres and service containers.  
-- Contract tests for gateway ↔ services (planned).
+Unit tests per Go module; crypto-core has deterministic + fuzz coverage for protocol safety.
 
-**Motivation**  
-- Prevent regressions as services evolve independently.  
-- Validate security-sensitive flows (auth, token refresh, session revocation).
+**Current state**  
+- Auth: service-level tests for auth/device flows.  
+- Keys: service tests for bundle registration/rotation and OTK consumption.  
+- Crypto-core: protocol tests exercising X3DH + Double Ratchet, deterministic vectors, and fuzz harness.  
+- Messages: covered by store/service tests for enqueue/history basics; WS path exercised manually.
 
-**Consequences**  
-- CI runtime increases slightly with integration tests; acceptable trade-off.
+**Gaps**  
+- No end-to-end integration tests across services yet.  
+- No contract tests between gateway ↔ downstream or frontend ↔ gateway.
 
 ---
 
 ## 12) Risks & Mitigations
 
-- **Operational complexity:** Mitigated by Compose, a minimal set of services, and clear CI/CD.  
-- **Security protocol drift:** Will formalize E2EE protocol (spec/doc + test vectors).  
-- **Key/secret handling mistakes:** Centralized via Actions Secrets; add secret scanning later.  
-- **Vendor lock-in (object storage):** Using S3 API allows switching providers.  
-- **Schema evolution:** Migrations container and versioned SQL; plan for zero-downtime patterns.
+- **Protocol regressions:** Mitigated by crypto-core fuzz/deterministic tests; still need E2E integration.  
+- **Auth/config drift:** Shared HS256 secret between Auth and gateway is a single point of failure; JWKS/offline rotation planned.  
+- **Operational drift:** Compose prod lacks automation; add CI deploy or kube manifests once environments stabilize.  
+- **Limited observability:** Metrics/logs exist, but no tracing backend; add later when services grow.  
+- **Schema evolution:** Migrations are explicit; keep backward-compatible changes when rolling updates start.
 
 ---
 
-## Appendix: Current Component Responsibilities
+## Appendix: Component Responsibilities (Current)
 
-- **Gateway**: TLS termination (environment), CORS, auth delegation, WS upgrade/routing.  
-- **Auth**: identity lifecycle, password hashing (Argon2id/bcrypt), JWT/refresh, session storage (`inet` for IP), event emission.  
-- **Messaging (planned)**: user/device registration for WS, rooms & membership, message persistence and delivery, events.  
-- **File (planned)**: pre-signed upload/download flows, metadata, encrypted blob storage on S3/MinIO.  
-- **PostgreSQL**: users, sessions, keys/metadata, room membership.  
-- **Object Storage**: encrypted file blobs.  
-- **Event Bus**: domain events (user registered, session created/revoked, message stored).
+- **Gateway:** CORS, rate limiting, request/trace IDs, proxy to Auth/Keys/Messages, WS pass-through.  
+- **Auth:** Users/credentials, device registry, HS256 JWT issuance/verify, session persistence (`inet` IP, UA).  
+- **Keys:** Key directory for identity/signed prekeys + one-time prekeys; validates token/device ownership on reads/writes.  
+- **Messages:** Ciphertext envelope store, HTTP send API, WS delivery loop with batch polling + delivery marking.  
+- **Crypto-core (library):** X3DH handshake + Double Ratchet, keypair/prekey generation, deterministic/fuzzed tests.  
+- **PostgreSQL (per service):** Auth/key/message data isolation; migrations via migrate containers.  
+- **Observability stack (dev optional):** Prometheus, Loki/Promtail, Grafana wired via Compose.
 
 ---
