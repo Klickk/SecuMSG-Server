@@ -22,8 +22,8 @@ Define clear, measurable targets, for example:
 
 - **Availability:** Error rate (5xx responses) < 1% for expected load.
 - **Latency:** p95 response time < 300 ms for `/messages/send` under expected load.
-- **Throughput:** At least **X** messages per second under expected load.
-- **Stability:** No crashes or restarts during a **N-minute** soak test at baseline load.
+- **Throughput:** At least **5** messages per second under expected load (baseline target).
+- **Stability:** No crashes or restarts during a **5-minute** soak test at baseline load.
 
 ---
 
@@ -32,47 +32,45 @@ Define clear, measurable targets, for example:
 ### 3.1 Infrastructure
 
 - **Cluster:** minikube on local machine  
-- **Kubernetes version:** `vX.Y.Z`
-- **Node resources:** `XX` CPU cores, `YY` GB RAM
-- **Database:** PostgreSQL `version`, single instance
-- **Storage:** local volume (describe if relevant)
+- **Kubernetes version:** `v1.34.2`
+- **Node resources:** `2` CPU cores, `8` GB RAM
+- **Database:** PostgreSQL `16`, single instance
 
 ### 3.2 Application Version
 
-- Git commit: `abcdef1234`
-- Branch: `main`
-- Container tags:
-  - `gateway: ...`
-  - `messages: ...`
-  - `auth: ...`
-  - etc.
+- Git branch: `main` (local run)  
+- Commit: not recorded for this run (local working tree)  
+- Runtime: local dev stack (gateway/auth/keys/messages) via Compose/minikube; gateway exposed on `http://localhost:8080`.
 
 ### 3.3 Monitoring & Observability
 
-- **Metrics:** Prometheus (if used)
+- **Metrics:** Prometheus 
 - **Dashboards:** Grafana (if used)
 - **Logs:** Loki / kubectl logs
 
-Include screenshots of relevant dashboards here.
+### Gateway Dashboard:
+![Gateway dashboard](./load-test/gateway.png)
+### Messages Dashboard
+![Messages dashboard](./load-test/messages.png)
 
 ---
 
 ## 4. Test Scenarios & Workload Model
 
-Describe the main scenarios you tested. Example:
+### 4.1 Scenario A – Send 1:1 Message
 
-### 4.1 Scenario A – Health Check
+- **Endpoint:** `POST /messages/send` (via gateway on `http://localhost:8080`)
+- **Description:** Simulates a user sending an encrypted 1:1 message. Payload includes `conv_id`, `from_device_id`, `to_device_id`, `ciphertext` (base64), and opaque `header` JSON.
+- **Tooling:** k6 (`infra/k6/baseline-send-message.js`).
+- **Workload:** 3-stage ramp (1m to 10 VUs, hold 3m at 10, ramp down 1m).
+- **Auth:** Bearer access token supplied via env; fixed conversation/device IDs.
+- **Results (5m run):**
+  - Requests: **2403** total (avg **~8 req/s**)
+  - Success: **100%** (0 failures)
+  - Latency: avg **12.6 ms**, median **13.1 ms**, p90 **13.8 ms**, p95 **14.2 ms**, max **17.6 ms**
+  - HTTP failures: **0%**
+  - Data sent/received: ~1.9 MB sent, ~0.9 MB received
+  - Iteration duration: ~1.01 s (includes 1 s sleep per iteration)
+  - VUs: peaked at **10** as configured
 
-- **Endpoint:** `GET /healthz`
-- **Purpose:** Verify basic availability under simple load.
-
-### 4.2 Scenario B – Send 1:1 Message
-
-- **Endpoint:** `POST /messages/send`
-- **Description:** Simulates a user sending a message to another user.
-- **Request shape:**
-  ```json
-  {
-    "recipient_id": "user-123",
-    "content": "Hello from load test"
-  }
+The measured latency and error rate meet the baseline SLAs (p95 < 300 ms; error rate < 1%; throughput > 5 req/s).
