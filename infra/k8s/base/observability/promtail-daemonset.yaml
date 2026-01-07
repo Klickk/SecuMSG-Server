@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: promtail
+  namespace: default
   labels:
     app: promtail
 spec:
@@ -26,13 +27,25 @@ spec:
             - name: promtail-config
               mountPath: /etc/promtail/promtail.yml
               subPath: promtail.yml
-            - name: varlog
-              mountPath: /var/log
+
+            # Explicit mounts (recommended)
+            - name: varlogpods
+              mountPath: /var/log/pods
+              readOnly: true
+            - name: varlogcontainers
+              mountPath: /var/log/containers
+              readOnly: true
+
       volumes:
         - name: promtail-config
           configMap:
             name: promtail-config
-        - name: varlog
+
+        - name: varlogpods
           hostPath:
-            path: /var/log
-            type: Directory
+            path: /var/log/pods
+            type: DirectoryOrCreate
+        - name: varlogcontainers
+          hostPath:
+            path: /var/log/containers
+            type: DirectoryOrCreate
