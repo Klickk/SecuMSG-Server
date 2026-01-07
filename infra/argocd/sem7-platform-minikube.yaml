@@ -16,17 +16,17 @@ spec:
 
   source:
     repoURL: https://github.com/Klickk/SecuMSG-Server
-    targetRevision: main #main          # or new-cicd while you’re testing
+    targetRevision: main #main          
     path: k8s/overlays/minikube
     kustomize: {}
 
   destination:
     server: https://kubernetes.default.svc
-    namespace: default # or whatever namespace you deploy into
+    namespace: default 
 
   syncPolicy:
     automated:
       prune: true # delete resources removed from Git
       selfHeal: true # fix drift automatically
     syncOptions:
-      - CreateNamespace=true # if your manifests use non-default namespaces
+      - CreateNamespace=true # if manifests use non-default namespaces

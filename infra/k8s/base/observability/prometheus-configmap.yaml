@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  labels:
+    app: prometheus
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: prometheus
+        static_configs:
+          - targets: ["prometheus:9090"]
+
+      - job_name: gateway
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["gateway:8080"]
+            labels:
+              service: gateway
+
+      - job_name: auth
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["auth:8081"]
+            labels:
+              service: auth
+
+      - job_name: keys
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["keys:8082"]
+            labels:
+              service: keys
+
+      - job_name: messages
+        metrics_path: /metrics
+        static_configs:
+          - targets: ["messages:8084"]
+            labels:
+              service: messages

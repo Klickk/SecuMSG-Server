@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: default
 resources:
   - ../../../infra/k8s/base/postgres
+  - ../../../infra/k8s/base/observability
   - ../minikube-auth
   - ../minikube-keys
   - ../minikube-messages
