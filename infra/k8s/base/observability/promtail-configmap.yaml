@@ -15,7 +15,6 @@ data:
 
     clients:
       - url: http://loki:3100/loki/api/v1/push
-        tenant_id: default
 
     scrape_configs:
       - job_name: kubernetes-pods
