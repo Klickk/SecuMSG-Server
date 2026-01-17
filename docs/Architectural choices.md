@@ -63,6 +63,17 @@ Encryption happens on the client using the `crypto-core` library (X3DH handshake
 - Attachment flows are not built yet; would follow the same client-encrypt-first rule.  
 - Protocol-level work lives in `services/crypto-core` with deterministic and fuzz tests to catch regressions.
 
+### 3b) Local Device Vault (PIN)
+
+**Threat**  
+Stolen browser profile or disk access exposes IndexedDB contents.
+
+**Mitigation**  
+Sensitive client records are encrypted at rest with a random DEK wrapped by a PIN-derived KEK (AES-GCM + KDF). The DEK is kept only in memory and locked on inactivity/tab close.
+
+**Limitation**  
+A 4-digit PIN is brute-forceable offline. Argon2id would slow attacks, but user-chosen entropy is still low; future upgrade to WebAuthn or longer passcodes for stronger protection.
+
 ---
 
 ## 4) Authentication & Sessions

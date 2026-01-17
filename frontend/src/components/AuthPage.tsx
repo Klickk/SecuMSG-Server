@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { LoginForm } from "./LoginForm";
 import { RegisterForm } from "./RegisterForm";
 import { Register } from "../services/register";
@@ -7,7 +7,10 @@ import { useNavigate } from "react-router-dom";
 import { RegisterResponse } from "../types/types";
 import { setItem, wipeDatabaseIfExists } from "../lib/storage";
 import { verifyAccessToken } from "../services/verify";
-import { MessagingClient } from "../lib/messagingClient";
+import { MessagingClient, SECURE_STORE, STORAGE_KEY } from "../lib/messagingClient";
+import { hasSecureRecord } from "../lib/secureStore";
+import { getKeyManager } from "../lib/keyManagerInstance";
+import { PinModal } from "./PinModal";
 import {
   getApiBaseUrl,
   getServiceHost,
@@ -21,6 +24,12 @@ export const AuthPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [serviceHost, setServiceHostInput] = useState(getServiceHost());
+  const [pinPromptOpen, setPinPromptOpen] = useState(false);
+  const [pinPromptError, setPinPromptError] = useState<string | null>(null);
+  const pinPromptRef = useRef<{
+    resolve: (pin: string) => void;
+    reject: (err: Error) => void;
+  } | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -43,6 +52,14 @@ export const AuthPage: React.FC = () => {
     }
   };
 
+  const requestPinPrompt = (): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      pinPromptRef.current = { resolve, reject };
+      setPinPromptError(null);
+      setPinPromptOpen(true);
+    });
+  };
+
   const handleLogin = async (values: { email: string; password: string }) => {
     setIsLoading(true);
     setError(null);
@@ -58,9 +75,12 @@ export const AuthPage: React.FC = () => {
       }
       await setItem("userId", verification.userId);
       await setItem("username", values.email);
+      await ensurePinSetup(verification.userId, requestPinPrompt);
       const state = await loadValidMessagingState(verification.userId);
       if (state) {
         await setItem("deviceId", state.deviceId());
+        navigate("/messages");
+      } else if (await hasSecureRecord(SECURE_STORE, STORAGE_KEY)) {
         navigate("/messages");
       } else {
         // No valid device state found → send user to device registration flow.
@@ -68,7 +88,11 @@ export const AuthPage: React.FC = () => {
       }
       console.log("Received tokens and resolved device state");
     } catch (err) {
-      setError("Failed to sign in. Please try again.");
+      if (err instanceof Error && err.message.includes("PIN")) {
+        setError(err.message);
+      } else {
+        setError("Failed to sign in. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -77,6 +101,7 @@ export const AuthPage: React.FC = () => {
     name: string;
     email: string;
     password: string;
+    pin: string;
   }) => {
     setIsLoading(true);
     setError(null);
@@ -95,13 +120,23 @@ export const AuthPage: React.FC = () => {
         await setItem("accessToken", resp.accessToken);
         await setItem("refreshToken", resp.refreshToken);
         await setItem("userId", resp.userId);
+        const manager = getKeyManager(resp.userId);
+        await withTimeout(
+          manager.setupPin(values.pin),
+          8000,
+          "PIN setup timed out. Please try again."
+        );
         // After account creation, always go to device registration to provision the device.
         navigate("/dRegister");
         console.log("Registration successful");
       }
       console.log("register submit", values);
     } catch (err) {
-      setError("Failed to create account. Please try again.");
+      if (err instanceof Error && err.message.includes("PIN")) {
+        setError(err.message);
+      } else {
+        setError("Failed to create account. Please try again.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -188,6 +223,56 @@ export const AuthPage: React.FC = () => {
           End-to-end encryption enabled by design. 💬🔐
         </p>
       </div>
+
+      <PinModal
+        isOpen={pinPromptOpen}
+        mode="setup"
+        title="Set your 4-digit PIN"
+        helper="This PIN protects your device encryption key."
+        error={pinPromptError}
+        onCancel={() => {
+          pinPromptRef.current?.reject(new Error("PIN setup is required to continue."));
+          pinPromptRef.current = null;
+          setPinPromptOpen(false);
+        }}
+        onSubmit={async (pin) => {
+          pinPromptRef.current?.resolve(pin);
+          pinPromptRef.current = null;
+          setPinPromptOpen(false);
+        }}
+      />
     </div>
   );
 };
+
+async function ensurePinSetup(
+  userId: string,
+  requestPinPrompt: () => Promise<string>
+): Promise<void> {
+  const manager = getKeyManager(userId);
+  if (await manager.hasWrappedKey()) {
+    return;
+  }
+  const pin = await requestPinPrompt();
+  await withTimeout(manager.setupPin(pin), 8000, "PIN setup timed out. Please try again.");
+}
+
+async function withTimeout<T>(
+  task: Promise<T>,
+  ms: number,
+  message: string
+): Promise<T> {
+  let timer: number | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = window.setTimeout(() => {
+      reject(new Error(message));
+    }, ms);
+  });
+  try {
+    return await Promise.race([task, timeout]);
+  } finally {
+    if (typeof timer === "number") {
+      window.clearTimeout(timer);
+    }
+  }
+}

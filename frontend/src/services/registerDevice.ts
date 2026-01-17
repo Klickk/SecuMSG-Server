@@ -3,6 +3,8 @@ import { MessagingClient } from "../lib/messagingClient";
 import { DeviceRegisterResponse } from "../types/types";
 import { getItem } from "../lib/storage";
 import { requireAccessToken } from "../lib/authToken";
+import { getKeyManager } from "../lib/keyManagerInstance";
+import { SecureStore } from "../lib/secureStore";
 
 export type DeviceRegistrationResult = {
   device: DeviceRegisterResponse;
@@ -21,10 +23,17 @@ const registerDevice = async (
 
   const safeName = deviceName.trim() || navigator.userAgent.slice(0, 32) || "Device";
 
+  const manager = getKeyManager(userId);
+  if (!manager.isUnlocked()) {
+    throw new Error("Device vault is locked.");
+  }
+  const secureStore = new SecureStore(manager, userId);
+
   const { client, device } = await MessagingClient.registerDevice(
     userId,
     safeName,
-    config.apiBaseUrl
+    config.apiBaseUrl,
+    secureStore
   );
 
   return { device: device as DeviceRegisterResponse, client };

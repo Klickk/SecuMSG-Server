@@ -21,9 +21,11 @@ import {
   deserializeMessages,
   latestTimestamp,
   loadMessages,
+  migrateLegacyMessages,
   type PersistedMessage,
 } from "./messageStorage";
-import { getItem, setItem } from "./storage";
+import { getItem, removeItem, setItem } from "./storage";
+import { SecureStore } from "./secureStore";
 import { requireAccessToken } from "./authToken";
 import { getApiBaseUrl } from "../config/config";
 
@@ -79,11 +81,13 @@ export type InboundMessage = {
   sentAt: Date;
 };
 
-const STORAGE_KEY = "secumsg-state";
+export const STORAGE_KEY = "secumsg-state";
+export const SECURE_STORE = "messaging-state";
 
 export class MessagingClient {
   private device: Device;
   private sessions: Map<string, SessionState>;
+  private secureStore?: SecureStore;
   private async authHeaders(): Promise<Record<string, string>> {
     const token = await requireAccessToken();
     return { Authorization: `Bearer ${token}` };
@@ -97,16 +101,19 @@ export class MessagingClient {
       messagesBaseUrl: string;
     },
     device: Device,
-    sessions: Map<string, SessionState> = new Map()
+    sessions: Map<string, SessionState> = new Map(),
+    secureStore?: SecureStore
   ) {
     this.device = device;
     this.sessions = sessions;
+    this.secureStore = secureStore;
   }
 
   static async registerDevice(
     userId: string,
     deviceName: string,
-    baseUrl: string
+    baseUrl: string,
+    secureStore?: SecureStore
   ): Promise<{
     client: MessagingClient;
     device: {
@@ -165,7 +172,8 @@ export class MessagingClient {
         messagesBaseUrl: baseUrl,
       },
       device,
-      new Map()
+      new Map(),
+      secureStore
     );
 
     await client.save();
@@ -173,28 +181,38 @@ export class MessagingClient {
     return { client, device: deviceInfo };
   }
 
-  static async load(): Promise<MessagingClient | null> {
-    const stored = await getItem(STORAGE_KEY);
-    if (!stored) return null;
+  static async load(secureStore?: SecureStore): Promise<MessagingClient | null> {
+    let stored = secureStore
+      ? await secureStore.secureGet<StoredMessagingState>(SECURE_STORE, STORAGE_KEY)
+      : null;
+    if (secureStore && !stored) {
+      await migrateLegacyState(secureStore);
+      stored = await secureStore.secureGet<StoredMessagingState>(
+        SECURE_STORE,
+        STORAGE_KEY
+      );
+    }
+    const resolved = stored ?? (await loadPlaintextState());
+    if (!resolved) return null;
     try {
-      const parsed: StoredMessagingState = JSON.parse(stored);
-      const device = ImportDevice(parsed.device);
+      const device = ImportDevice(resolved.device);
       const sessions = new Map<string, SessionState>();
-      if (parsed.sessions) {
-        for (const [id, snap] of Object.entries(parsed.sessions)) {
+      if (resolved.sessions) {
+        for (const [id, snap] of Object.entries(resolved.sessions)) {
           sessions.set(id, ImportSession(snap));
         }
       }
       const baseUrl = getApiBaseUrl();
       return new MessagingClient(
         {
-          userId: parsed.userId,
-          deviceId: parsed.deviceId,
+          userId: resolved.userId,
+          deviceId: resolved.deviceId,
           keysBaseUrl: baseUrl,
           messagesBaseUrl: baseUrl,
         },
         device,
-        sessions
+        sessions,
+        secureStore
       );
     } catch (err) {
       console.error("Failed to load messaging state", err);
@@ -218,6 +236,10 @@ export class MessagingClient {
       }
     }
 
+    if (this.secureStore) {
+      await this.secureStore.securePut(SECURE_STORE, STORAGE_KEY, snapshot);
+      return;
+    }
     await setItem(STORAGE_KEY, JSON.stringify(snapshot));
   }
 
@@ -257,7 +279,7 @@ export class MessagingClient {
       sentAt: new Date(),
     };
 
-    await appendMessages(convId, [serialize(outbound)]);
+    await appendMessages(convId, [serialize(outbound)], this.secureStore);
 
     return outbound;
   }
@@ -289,7 +311,7 @@ export class MessagingClient {
       sentAt: new Date(env.sent_at),
     };
 
-    await appendMessages(env.conv_id, [serialize(inbound)]);
+    await appendMessages(env.conv_id, [serialize(inbound)], this.secureStore);
 
     return inbound;
   }
@@ -433,12 +455,40 @@ export class MessagingClient {
   async loadLocalHistory(
     convId: string
   ): Promise<(InboundMessage | OutboundMessage)[]> {
-    const stored = await loadMessages(convId);
+    const stored = await loadMessages(convId, this.secureStore);
     return deserializeMessages(stored);
   }
 
   async latestLocalMessage(convId: string): Promise<Date | null> {
-    return latestTimestamp(convId);
+    return latestTimestamp(convId, this.secureStore);
+  }
+}
+
+async function loadPlaintextState(): Promise<StoredMessagingState | null> {
+  const raw = await getItem(STORAGE_KEY);
+  if (!raw) {
+    return null;
+  }
+  try {
+    return JSON.parse(raw) as StoredMessagingState;
+  } catch (err) {
+    console.error("Failed to parse plaintext state", err);
+    return null;
+  }
+}
+
+async function migrateLegacyState(secureStore: SecureStore): Promise<void> {
+  const raw = await getItem(STORAGE_KEY);
+  if (!raw) {
+    return;
+  }
+  try {
+    const parsed = JSON.parse(raw) as StoredMessagingState;
+    await secureStore.securePut(SECURE_STORE, STORAGE_KEY, parsed);
+    await removeItem(STORAGE_KEY);
+    await migrateLegacyMessages(secureStore);
+  } catch (err) {
+    console.error("Failed to migrate legacy messaging state", err);
   }
 }
 

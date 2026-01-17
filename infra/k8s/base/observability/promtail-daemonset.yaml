@@ -21,6 +21,7 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - -config.file=/etc/promtail/promtail.yml
+            - -log.level=debug
           ports:
             - containerPort: 9080
           volumeMounts:

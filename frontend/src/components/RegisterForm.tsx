@@ -4,6 +4,7 @@ export type RegisterFormValues = {
   name: string;
   email: string;
   password: string;
+  pin: string;
 };
 
 type RegisterFormProps = {
@@ -19,23 +20,37 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
     name: "",
     email: "",
     password: "",
+    pin: "",
   });
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const { name, value } = e.target;
     if (name === "confirmPassword") {
       setConfirmPassword(value);
-    } else {
-      setValues((prev) => ({ ...prev, [name]: value }));
+      return;
     }
+    if (name === "confirmPin") {
+      setConfirmPin(value);
+      return;
+    }
+    setValues((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (values.password !== confirmPassword) {
       setLocalError("Passwords do not match.");
+      return;
+    }
+    if (!/^\d{4}$/.test(values.pin)) {
+      setLocalError("PIN must be exactly 4 digits.");
+      return;
+    }
+    if (values.pin !== confirmPin) {
+      setLocalError("PINs do not match.");
       return;
     }
     setLocalError(null);
@@ -126,6 +141,44 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
           onChange={handleChange}
           className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
           placeholder="••••••••"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="pin" className="block text-sm font-medium text-slate-200">
+          Create 4-digit PIN
+        </label>
+        <input
+          id="pin"
+          name="pin"
+          type="password"
+          inputMode="numeric"
+          pattern="[0-9]{4}"
+          maxLength={4}
+          required
+          value={values.pin}
+          onChange={handleChange}
+          className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+          placeholder="••••"
+        />
+      </div>
+
+      <div className="space-y-1">
+        <label htmlFor="confirmPin" className="block text-sm font-medium text-slate-200">
+          Confirm PIN
+        </label>
+        <input
+          id="confirmPin"
+          name="confirmPin"
+          type="password"
+          inputMode="numeric"
+          pattern="[0-9]{4}"
+          maxLength={4}
+          required
+          value={confirmPin}
+          onChange={handleChange}
+          className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+          placeholder="••••"
         />
       </div>
 

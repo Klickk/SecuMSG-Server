@@ -1,11 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { KeyManager, UnlockThrottledError } from "../crypto-core/keyManager";
 import {
   InboundMessage,
   MessagingClient,
   OutboundMessage,
 } from "../lib/messagingClient";
 import { getItem, setItem } from "../lib/storage";
+import { SecureStore } from "../lib/secureStore";
+import { migrateLegacyMessages } from "../lib/messageStorage";
+import { PinModal } from "./PinModal";
+import { getKeyManager } from "../lib/keyManagerInstance";
+import { ActivityTracker } from "../lib/activityTracker";
 import { resolveContact } from "../services/resolveContact";
 import { resolveContactByDevice } from "../services/resolveDevice";
 
@@ -23,6 +29,13 @@ const defaultConvId = () => crypto.randomUUID();
 
 export const MessagingPage: React.FC = () => {
   const [client, setClient] = useState<MessagingClient | null>(null);
+  const [lockState, setLockState] = useState<"checking" | "locked" | "unlocked">(
+    "checking"
+  );
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [unlockWaitSeconds, setUnlockWaitSeconds] = useState<number | null>(null);
+  const keyManagerRef = useRef<ReturnType<typeof getKeyManager> | null>(null);
+  const activityRef = useRef<ActivityTracker | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsInitialized, setContactsInitialized] = useState(false);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
@@ -50,11 +63,114 @@ export const MessagingPage: React.FC = () => {
   );
   const navigate = useNavigate();
 
+  const handleLock = useCallback(() => {
+    setLockState("locked");
+    setClient(null);
+    setMessages([]);
+    setContacts([]);
+    setContactsInitialized(false);
+    setHistoryFetched({});
+    setLocalHistoryLoaded(false);
+    activityRef.current?.stop();
+  }, []);
+
+  const resolveUsernameForDevice = useCallback(
+    async (deviceId: string, convId?: string) => {
+      try {
+        const res = await resolveContactByDevice(deviceId);
+        setContacts((prev) =>
+          prev.map((c) => {
+            const match =
+              c.deviceId === deviceId || (convId && c.convId === convId);
+            if (!match) return c;
+            const nextLabel =
+              c.label === "New contact" || c.label.trim() === ""
+                ? res.username
+                : c.label;
+            return {
+              ...c,
+              deviceId: res.deviceId,
+              username: res.username,
+              label: nextLabel,
+            };
+          })
+        );
+      } catch (err) {
+        console.warn("Could not resolve username for device", err);
+      }
+    },
+    []
+  );
+
   useEffect(() => {
+    (async () => {
+      const userId = await getItem("userId");
+      if (!userId) {
+        navigate("/");
+        return;
+      }
+      const manager = getKeyManager(userId, {
+        onLock: handleLock,
+        onNeedsUnlock: () => setLockState("locked"),
+        inactivityMs: 24 * 60 * 60 * 1000,
+      });
+      keyManagerRef.current = manager;
+      const hasWrapped = await manager.hasWrappedKey();
+      if (!hasWrapped) {
+        setUnlockError("Set up a PIN to protect your device.");
+        setLockState("locked");
+        return;
+      }
+      if (manager.isUnlocked()) {
+        setLockState("unlocked");
+      } else {
+        setLockState("locked");
+      }
+    })();
+    return () => {
+      activityRef.current?.stop();
+    };
+  }, [handleLock, navigate]);
+
+  useEffect(() => {
+    if (lockState !== "unlocked") {
+      activityRef.current?.stop();
+      return;
+    }
+    const manager = keyManagerRef.current;
+    if (!manager) {
+      return;
+    }
+    const tracker = new ActivityTracker({
+      idleMs: 5 * 60 * 1000,
+      onIdle: () => manager.lock("inactivity"),
+    });
+    activityRef.current = tracker;
+    tracker.start();
+    return () => {
+      tracker.stop();
+    };
+  }, [lockState]);
+
+  useEffect(() => {
+    if (lockState !== "unlocked") {
+      return;
+    }
     let cancelled = false;
     let socket: WebSocket | null = null;
     (async () => {
-      const loaded = await MessagingClient.load();
+      const userId = await getItem("userId");
+      if (!userId) {
+        navigate("/");
+        return;
+      }
+      const manager = keyManagerRef.current;
+      if (!manager) {
+        return;
+      }
+      const store = new SecureStore(manager, userId);
+      await migrateLegacyMessages(store);
+      const loaded = await MessagingClient.load(store);
       if (cancelled) return;
       if (!loaded) {
         navigate("/dRegister");
@@ -119,7 +235,19 @@ export const MessagingPage: React.FC = () => {
       cancelled = true;
       socket?.close();
     };
-  }, [navigate]);
+  }, [lockState, navigate, resolveUsernameForDevice]);
+
+  useEffect(() => {
+    if (!unlockWaitSeconds || unlockWaitSeconds <= 0) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setUnlockWaitSeconds(null);
+    }, unlockWaitSeconds * 1000);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [unlockWaitSeconds]);
 
   useEffect(() => {
     if (!client) return;
@@ -148,15 +276,15 @@ export const MessagingPage: React.FC = () => {
   }, [client, contacts]);
 
   useEffect(() => {
-    if (!contactsInitialized) return;
+    if (!contactsInitialized || lockState !== "unlocked") return;
     (async () => {
       await setItem(CONTACTS_KEY, JSON.stringify(contacts));
     })();
-  }, [contacts, contactsInitialized]);
+  }, [contacts, contactsInitialized, lockState]);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const loadContacts = async () => {
       try {
         const stored = await getItem(CONTACTS_KEY);
         if (!cancelled && stored) {
@@ -171,11 +299,14 @@ export const MessagingPage: React.FC = () => {
           setContactsInitialized(true);
         }
       }
-    })();
+    };
+    if (lockState === "unlocked") {
+      loadContacts();
+    }
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [lockState]);
 
   useEffect(() => {
     let cancelled = false;
@@ -189,34 +320,6 @@ export const MessagingPage: React.FC = () => {
       cancelled = true;
     };
   }, []);
-
-  const resolveUsernameForDevice = useCallback(
-    async (deviceId: string, convId?: string) => {
-      try {
-        const res = await resolveContactByDevice(deviceId);
-        setContacts((prev) =>
-          prev.map((c) => {
-            const match =
-              c.deviceId === deviceId || (convId && c.convId === convId);
-            if (!match) return c;
-            const nextLabel =
-              c.label === "New contact" || c.label.trim() === ""
-                ? res.username
-                : c.label;
-            return {
-              ...c,
-              deviceId: res.deviceId,
-              username: res.username,
-              label: nextLabel,
-            };
-          })
-        );
-      } catch (err) {
-        console.warn("Could not resolve username for device", err);
-      }
-    },
-    []
-  );
 
   useEffect(() => {
     // Backfill usernames for any contacts missing them
@@ -455,6 +558,34 @@ export const MessagingPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 px-4 py-10">
+      <PinModal
+        isOpen={lockState === "locked"}
+        mode="unlock"
+        title="Unlock your vault"
+        helper="Enter your 4-digit PIN to continue."
+        error={unlockError}
+        waitSeconds={unlockWaitSeconds ?? undefined}
+        onSubmit={async (pin) => {
+          const manager = keyManagerRef.current;
+          if (!manager) {
+            setUnlockError("Key manager unavailable. Refresh and try again.");
+            return;
+          }
+          setUnlockError(null);
+          setUnlockWaitSeconds(null);
+          try {
+            await manager.unlock(pin);
+            setLockState("unlocked");
+          } catch (err) {
+            if (err instanceof UnlockThrottledError) {
+              const wait = Math.ceil(err.waitMs / 1000);
+              setUnlockWaitSeconds(wait);
+              return;
+            }
+            setUnlockError("Invalid PIN. Please try again.");
+          }
+        }}
+      />
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-semibold">Messages</h1>
@@ -693,3 +824,37 @@ export const MessagingPage: React.FC = () => {
     </div>
   );
 };
+
+async function ensureUnlocked(manager: KeyManager): Promise<void> {
+  if (!(await manager.hasWrappedKey())) {
+    const setupPin = window.prompt("Set a 4-digit PIN to secure this device.");
+    if (!setupPin) {
+      throw new Error("PIN setup cancelled");
+    }
+    await manager.setupPin(setupPin);
+    return;
+  }
+
+  while (true) {
+    const pin = window.prompt("Enter your 4-digit PIN to unlock.");
+    if (!pin) {
+      throw new Error("PIN entry cancelled");
+    }
+    try {
+      await manager.unlock(pin);
+      return;
+    } catch (err) {
+      if (err instanceof UnlockThrottledError) {
+        const waitSeconds = Math.ceil(err.waitMs / 1000);
+        window.alert(`Too many attempts. Try again in ${waitSeconds}s.`);
+        await sleep(err.waitMs);
+        continue;
+      }
+      window.alert("Invalid PIN. Please try again.");
+    }
+  }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}

@@ -1,0 +1,31 @@
+#cloud-config
+package_update: true
+packages:
+  - ca-certificates
+  - curl
+  - apt-transport-https
+  - gnupg
+  - lsb-release
+
+runcmd:
+  # --- Docker ---
+  - curl -fsSL https://get.docker.com | sh
+  - usermod -aG docker azureuser
+  - systemctl enable --now docker
+
+  # --- kubectl ---
+  - curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  - echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /" > /etc/apt/sources.list.d/kubernetes.list
+  - apt-get update && apt-get install -y kubectl
+
+  # --- minikube ---
+  - curl -Lo /usr/local/bin/minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+  - chmod +x /usr/local/bin/minikube
+
+  # --- start minikube (docker driver) ---
+  - sudo -u azureuser -H minikube start --driver=docker --cpus=4 --memory=8192
+  - sudo -u azureuser -H minikube addons enable ingress
+
+  # --- install Argo CD ---
+  - sudo -u azureuser -H kubectl create namespace argocd
+  - sudo -u azureuser -H kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml

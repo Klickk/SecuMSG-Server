@@ -1,10 +1,14 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import registerDevice, {
   DeviceRegistrationResult,
 } from "../services/registerDevice";
 import { InboundMessage } from "../lib/messagingClient";
 import { setItem } from "../lib/storage";
+import { getItem } from "../lib/storage";
+import { getKeyManager } from "../lib/keyManagerInstance";
+import { UnlockThrottledError } from "../crypto-core/keyManager";
+import { PinModal } from "./PinModal";
 
 export type DeviceRegisterFormValues = {
   name: string;
@@ -25,6 +29,12 @@ export const DeviceRegisterForm: React.FC<DeviceRegisterFormProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [messages, setMessages] = useState<InboundMessage[]>([]);
+  const [lockState, setLockState] = useState<"checking" | "locked" | "unlocked">(
+    "checking"
+  );
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [unlockWaitSeconds, setUnlockWaitSeconds] = useState<number | null>(null);
+  const keyManagerRef = useRef<ReturnType<typeof getKeyManager> | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const navigate = useNavigate();
 
@@ -33,9 +43,18 @@ export const DeviceRegisterForm: React.FC<DeviceRegisterFormProps> = ({
     setValues({ name: value });
   };
 
+  const handleLock = useCallback(() => {
+    setLockState("locked");
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!values.name.trim()) return;
+    if (lockState !== "unlocked") {
+      setUnlockError("Unlock required to register this device.");
+      setLockState("locked");
+      return;
+    }
     setIsSubmitting(true);
     setStatus(null);
     try {
@@ -74,8 +93,73 @@ export const DeviceRegisterForm: React.FC<DeviceRegisterFormProps> = ({
     };
   }, []);
 
+  useEffect(() => {
+    if (!unlockWaitSeconds || unlockWaitSeconds <= 0) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setUnlockWaitSeconds(null);
+    }, unlockWaitSeconds * 1000);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [unlockWaitSeconds]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const userId = await getItem("userId");
+      if (!userId) {
+        navigate("/");
+        return;
+      }
+      const manager = getKeyManager(userId, { onLock: handleLock });
+      keyManagerRef.current = manager;
+      const hasWrapped = await manager.hasWrappedKey();
+      if (!hasWrapped) {
+        setUnlockError("Set up a PIN to protect your device.");
+        setLockState("locked");
+        return;
+      }
+      if (!cancelled) {
+        setLockState(manager.isUnlocked() ? "unlocked" : "locked");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [handleLock, navigate]);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
+      <PinModal
+        isOpen={lockState === "locked"}
+        mode="unlock"
+        title="Unlock to continue"
+        helper="Enter your 4-digit PIN to register this device."
+        error={unlockError}
+        waitSeconds={unlockWaitSeconds ?? undefined}
+        onSubmit={async (pin) => {
+          const manager = keyManagerRef.current;
+          if (!manager) {
+            setUnlockError("Key manager unavailable. Refresh and try again.");
+            return;
+          }
+          setUnlockError(null);
+          setUnlockWaitSeconds(null);
+          try {
+            await manager.unlock(pin);
+            setLockState("unlocked");
+          } catch (err) {
+            if (err instanceof UnlockThrottledError) {
+              const wait = Math.ceil(err.waitMs / 1000);
+              setUnlockWaitSeconds(wait);
+              return;
+            }
+            setUnlockError("Invalid PIN. Please try again.");
+          }
+        }}
+      />
       <div className="w-full max-w-md">
         <div className="bg-slate-900/70 border border-slate-800 rounded-2xl shadow-xl p-8 backdrop-blur">
           <div className="mb-6">
