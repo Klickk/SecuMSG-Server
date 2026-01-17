@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"auth/internal/domain"
 	"auth/internal/dto"
@@ -13,6 +14,7 @@ import (
 	"auth/internal/observability/metrics"
 	"auth/internal/observability/middleware"
 	"auth/internal/service"
+	"auth/internal/store"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -40,7 +42,7 @@ func clientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-func NewRouter(auth service.AuthService, devices service.DeviceService, tokens service.TokenService) *http.ServeMux {
+func NewRouter(auth service.AuthService, devices service.DeviceService, tokens service.TokenService, st *store.Store) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -285,6 +287,41 @@ func NewRouter(auth service.AuthService, devices service.DeviceService, tokens s
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	})
+
+	mux.HandleFunc("/v1/users/me", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if st == nil {
+			http.Error(w, "store unavailable", http.StatusInternalServerError)
+			return
+		}
+		res, ok := requireToken(w, r, tokens, "")
+		if !ok {
+			return
+		}
+		userID, err := uuid.Parse(res.UserID)
+		if err != nil {
+			http.Error(w, "invalid user id", http.StatusBadRequest)
+			return
+		}
+		deleted, err := st.DeleteUserData(r.Context(), userID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		resp := struct {
+			Status           string           `json:"status"`
+			DeletedResources map[string]int64 `json:"deletedResources"`
+			Timestamp        string           `json:"timestamp"`
+		}{
+			Status:           "deleted",
+			DeletedResources: deleted,
+			Timestamp:        time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		writeJSON(w, http.StatusOK, resp)
 	})
 
 	return mux

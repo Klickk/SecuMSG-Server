@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -108,6 +111,7 @@ func main() {
 		r.Post("/login", p.ForwardJSON("/v1/auth/login"))
 		r.Post("/refresh", p.ForwardJSON("/v1/auth/refresh"))
 		r.Post("/verify", p.ForwardJSON("/v1/auth/verify"))
+		r.Delete("/me", p.ForwardJSON("/v1/users/me"))
 		r.Post("/resolve", p.ForwardJSON("/v1/users/resolve"))
 		r.Post("/resolve-device", p.ForwardJSON("/v1/users/resolve-device"))
 		r.Route("/devices", func(r chi.Router) {
@@ -123,12 +127,14 @@ func main() {
 		r.Post("/device/register", keysProxy.ForwardJSON("/keys/device/register"))
 		r.Get("/bundle", keysProxy.ForwardJSON("/keys/bundle"))
 		r.Post("/rotate-signed-prekey", keysProxy.ForwardJSON("/keys/rotate-signed-prekey"))
+		r.Delete("/me", keysProxy.ForwardJSON("/keys/me"))
 	})
 
 	// -------- Message service proxy --------
 	r.Post("/messages/send", messagesProxy.ForwardJSON("/messages/send"))
 	r.Get("/messages/history", messagesProxy.ForwardJSON("/messages/history"))
 	r.Get("/messages/conversations", messagesProxy.ForwardJSON("/messages/conversations"))
+	r.Delete("/messages/me", messagesProxy.ForwardJSON("/messages/me"))
 	wsHandler := func(w http.ResponseWriter, req *http.Request) {
 		if req.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -168,6 +174,107 @@ func main() {
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"sub":"` + sub + `"}`))
+		})
+
+		pr.Delete("/profile", func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if strings.TrimSpace(authHeader) == "" {
+				http.Error(w, "missing bearer token", http.StatusUnauthorized)
+				return
+			}
+
+			type deletePayload struct {
+				Status           string           `json:"status"`
+				DeletedResources map[string]int64 `json:"deletedResources"`
+				Timestamp        string           `json:"timestamp"`
+			}
+			type aggregateResponse struct {
+				Status           string                      `json:"status"`
+				DeletedResources map[string]map[string]int64 `json:"deletedResources,omitempty"`
+				Errors           map[string]string           `json:"errors,omitempty"`
+				Timestamp        string                      `json:"timestamp"`
+			}
+
+			client := &http.Client{Timeout: 10 * time.Second}
+
+			callDelete := func(baseURL, path, label string) (*deletePayload, int, error) {
+				req, err := http.NewRequestWithContext(r.Context(), http.MethodDelete, baseURL+path, nil)
+				if err != nil {
+					return nil, http.StatusBadGateway, err
+				}
+				req.Header.Set("Authorization", authHeader)
+				req.Header.Set("Content-Type", "application/json")
+				if reqID := obsmw.RequestIDFromContext(r.Context()); reqID != "" {
+					req.Header.Set("X-Request-ID", reqID)
+				}
+				if traceID := obsmw.TraceIDFromContext(r.Context()); traceID != "" {
+					req.Header.Set("X-Trace-ID", traceID)
+				}
+
+				resp, err := client.Do(req)
+				if err != nil {
+					return nil, http.StatusBadGateway, err
+				}
+				defer func() { _ = resp.Body.Close() }()
+
+				if resp.StatusCode >= 400 {
+					body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+					return nil, resp.StatusCode, fmt.Errorf("%s delete failed: %s", label, strings.TrimSpace(string(body)))
+				}
+				var payload deletePayload
+				if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+					return nil, http.StatusBadGateway, err
+				}
+				return &payload, resp.StatusCode, nil
+			}
+
+			deleted := map[string]map[string]int64{}
+			errors := map[string]string{}
+
+			msgPath := "/messages/me"
+			if deviceParam := strings.TrimSpace(r.URL.Query().Get("device_id")); deviceParam != "" {
+				msgPath = msgPath + "?device_id=" + url.QueryEscape(deviceParam)
+			}
+			msgPayload, _, err := callDelete(messagesBase, msgPath, "messages")
+			if err != nil {
+				errors["messages"] = err.Error()
+			} else if msgPayload != nil {
+				deleted["messages"] = msgPayload.DeletedResources
+			}
+
+			keysPayload, _, err := callDelete(keysBase, "/keys/me", "keys")
+			if err != nil {
+				errors["keys"] = err.Error()
+			} else if keysPayload != nil {
+				deleted["keys"] = keysPayload.DeletedResources
+			}
+
+			if len(errors) == 0 {
+				authPayload, _, err := callDelete(authBase, "/v1/users/me", "auth")
+				if err != nil {
+					errors["auth"] = err.Error()
+				} else if authPayload != nil {
+					deleted["auth"] = authPayload.DeletedResources
+				}
+			}
+
+			resp := aggregateResponse{
+				Status:    "deleted",
+				Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+			}
+			if len(errors) > 0 {
+				resp.Status = "failed"
+				resp.Errors = errors
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadGateway)
+				_ = json.NewEncoder(w).Encode(resp)
+				return
+			}
+
+			resp.DeletedResources = deleted
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(resp)
 		})
 	})
 

@@ -114,6 +114,7 @@ func NewRouter(svc *service.Service, poll time.Duration, batch int, authClient *
 	mux.HandleFunc("/messages/send", h.handleSend)
 	mux.HandleFunc("/messages/conversations", h.handleConversations)
 	mux.HandleFunc("/messages/history", h.handleHistory)
+	mux.HandleFunc("/messages/me", h.handleDeleteMe)
 	mux.HandleFunc("/ws", h.handleWS)
 	mux.HandleFunc("/client/init", h.handleClientInit)
 	mux.HandleFunc("/client/send", h.handleClientSend)
@@ -384,6 +385,60 @@ func (h *Handler) handleWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+func (h *Handler) handleDeleteMe(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	deviceParam := strings.TrimSpace(r.URL.Query().Get("device_id"))
+	deviceID := uuid.Nil
+	if deviceParam != "" {
+		parsed, err := uuid.Parse(deviceParam)
+		if err != nil {
+			http.Error(w, "invalid device_id", http.StatusBadRequest)
+			return
+		}
+		deviceID = parsed
+	}
+
+	claims, ok := h.requireAuth(w, r, deviceID)
+	if !ok {
+		return
+	}
+
+	if deviceID == uuid.Nil {
+		if claims.TokenDeviceID == nil {
+			http.Error(w, "device_id is required", http.StatusBadRequest)
+			return
+		}
+		deviceID = *claims.TokenDeviceID
+	}
+
+	deleted, err := h.svc.DeleteForDevice(r.Context(), deviceID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrInvalidRequest) {
+			status = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+
+	resp := struct {
+		Status           string           `json:"status"`
+		DeletedResources map[string]int64 `json:"deletedResources"`
+		Timestamp        string           `json:"timestamp"`
+	}{
+		Status: "deleted",
+		DeletedResources: map[string]int64{
+			"messages": deleted,
+		},
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

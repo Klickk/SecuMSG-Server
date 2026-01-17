@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"keys/internal/auth"
 	"keys/internal/dto"
@@ -196,6 +197,32 @@ func NewRouter(svc *service.Service, authClient *auth.Client) *http.ServeMux {
 		metrics.SignedPreKeysRotatedTotal.WithLabelValues("success").Inc()
 		slog.Info("rotated signed prekey", "device_id", res.DeviceID, "added_one_time_keys", res.AddedOneTimeKeys, "request_id", reqID, "trace_id", traceID)
 		writeJSON(w, http.StatusOK, res)
+	})
+
+	mux.HandleFunc("/keys/me", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		claims, ok := requireAuth(w, r, uuid.Nil)
+		if !ok {
+			return
+		}
+		deleted, err := svc.DeleteUserData(r.Context(), claims.UserID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		resp := struct {
+			Status           string           `json:"status"`
+			DeletedResources map[string]int64 `json:"deletedResources"`
+			Timestamp        string           `json:"timestamp"`
+		}{
+			Status:           "deleted",
+			DeletedResources: deleted,
+			Timestamp:        time.Now().UTC().Format(time.RFC3339Nano),
+		}
+		writeJSON(w, http.StatusOK, resp)
 	})
 
 	return mux

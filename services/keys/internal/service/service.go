@@ -11,6 +11,7 @@ import (
 	"keys/internal/store"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 type Service struct {
@@ -199,4 +200,40 @@ func parseOrGenerate(id string) (uuid.UUID, error) {
 		return uuid.UUID{}, err
 	}
 	return parsed, nil
+}
+
+func (s *Service) DeleteUserData(ctx context.Context, userID uuid.UUID) (map[string]int64, error) {
+	deleted := map[string]int64{}
+	err := s.store.WithTx(ctx, func(tx *store.Store) error {
+		db := tx.DB.WithContext(ctx)
+
+		count := func(label string, query *gorm.DB) error {
+			var total int64
+			if err := query.Count(&total).Error; err != nil {
+				return err
+			}
+			deleted[label] = total
+			return nil
+		}
+
+		if err := count("users", db.Model(&domain.User{}).Where("id = ?", userID)); err != nil {
+			return err
+		}
+		if err := count("devices", db.Model(&domain.Device{}).Where("user_id = ?", userID)); err != nil {
+			return err
+		}
+		if err := count("identityKeys", db.Table("identity_keys").Joins("JOIN devices ON devices.id = identity_keys.device_id").Where("devices.user_id = ?", userID)); err != nil {
+			return err
+		}
+		if err := count("signedPreKeys", db.Table("signed_pre_keys").Joins("JOIN devices ON devices.id = signed_pre_keys.device_id").Where("devices.user_id = ?", userID)); err != nil {
+			return err
+		}
+		if err := count("oneTimePrekeys", db.Table("one_time_prekeys").Joins("JOIN devices ON devices.id = one_time_prekeys.device_id").Where("devices.user_id = ?", userID)); err != nil {
+			return err
+		}
+
+		return db.Where("id = ?", userID).Delete(&domain.User{}).Error
+	})
+
+	return deleted, err
 }

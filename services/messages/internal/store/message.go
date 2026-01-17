@@ -103,3 +103,13 @@ func (s *Store) MarkDelivered(ctx context.Context, ids []uuid.UUID, at time.Time
 		Update("delivered_at", at).
 		Error
 }
+
+func (s *Store) DeleteForDevice(ctx context.Context, deviceID uuid.UUID) (int64, error) {
+	if deviceID == uuid.Nil {
+		return 0, nil
+	}
+	res := s.db.WithContext(ctx).
+		Where("to_device_id = ? OR from_device_id = ?", deviceID, deviceID).
+		Delete(&Message{})
+	return res.RowsAffected, res.Error
+}

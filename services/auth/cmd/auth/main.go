@@ -63,7 +63,7 @@ func main() {
 	ds := impl.NewDeviceServiceImpl(st)
 
 	// 3) HTTP router
-	mux := httpx.NewRouter(as, ds, ts) // if router needs cfg (CORS, trust proxy), pass it in here
+	mux := httpx.NewRouter(as, ds, ts, st) // if router needs cfg (CORS, trust proxy), pass it in here
 
 	handler := middleware.WithRequestAndTrace(middleware.WithMetrics(mux))
 

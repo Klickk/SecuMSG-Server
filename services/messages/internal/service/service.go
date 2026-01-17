@@ -100,3 +100,10 @@ func (s *Service) Conversations(ctx context.Context, deviceID uuid.UUID) ([]uuid
 	}
 	return s.store.ConversationsForDevice(ctx, deviceID)
 }
+
+func (s *Service) DeleteForDevice(ctx context.Context, deviceID uuid.UUID) (int64, error) {
+	if deviceID == uuid.Nil {
+		return 0, ErrInvalidRequest
+	}
+	return s.store.DeleteForDevice(ctx, deviceID)
+}
